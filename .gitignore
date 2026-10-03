@@ -1,0 +1,10 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# generated run output (folder itself is kept via .gitkeep)
+logs/*.csv
+logs/*.bag*
+logs/*.png
+logs/*.npy

@@ -1,0 +1,14 @@
+# Every tunable number in the project lives in this file, nowhere else.
+# Sections are filled in as each part gets built.
+
+sim:           # filled in later
+car:           # filled in later
+lidar:         # filled in later
+explore:       # filled in later
+laps:          # filled in later
+mapping:       # filled in later
+plan:          # filled in later
+race:          # filled in later
+learning:      # filled in later
+safety:        # filled in later
+track_change:  # filled in later
