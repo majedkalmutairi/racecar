@@ -1,7 +1,11 @@
 # Every tunable number in the project lives in this file, nowhere else.
 # Sections are filled in as each part gets built.
 
-sim:           # filled in later
+sim:
+  window_w: 1000   # window width, pixels
+  window_h: 700    # window height, pixels
+  fps: 60          # frames per second
+  px_per_m: 100    # pixels per metre when drawing
 car:           # filled in later
 lidar:         # filled in later
 explore:       # filled in later
