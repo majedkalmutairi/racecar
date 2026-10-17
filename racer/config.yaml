@@ -6,7 +6,16 @@ sim:
   window_h: 700    # window height, pixels
   fps: 60          # frames per second
   px_per_m: 100    # pixels per metre when drawing
-car:           # filled in later
+  max_dt: 0.05     # longest physics step allowed, seconds
+car:
+  wheelbase_m: 0.33
+  max_speed_mps: 8
+  max_steer_rad: 0.4
+  max_accel: 4
+  max_brake: 8
+  length_m: 0.55
+  width_m: 0.3
+  friction_decel: 1.0
 lidar:         # filled in later
 explore:       # filled in later
 laps:          # filled in later

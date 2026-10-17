@@ -3,7 +3,10 @@ from pathlib import Path
 import pygame
 import yaml
 
+from racer.sim.car import Car
+
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+BACKGROUND = (30, 30, 30)
 
 
 def load_config(path):
@@ -11,44 +14,37 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
-class Car:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.heading = 0.0
-        self.speed = 300
-        self.w = 40
-        self.h = 20
+def drive(car, keys, dt):
+    accel = 0.0
+    steer = 0.0
 
-    def update(self, keys, dt, screen_w, screen_h):
-        if keys[pygame.K_LEFT]:
-            self.x -= self.speed * dt
-        if keys[pygame.K_RIGHT]:
-            self.x += self.speed * dt
-        if keys[pygame.K_UP]:
-            self.y -= self.speed * dt
-        if keys[pygame.K_DOWN]:
-            self.y += self.speed * dt
+    if keys[pygame.K_UP]:
+        accel = car.max_accel
+    elif keys[pygame.K_DOWN]:
+        accel = -car.max_brake
 
-        self.x %= screen_w
-        self.y %= screen_h
+    if keys[pygame.K_LEFT]:
+        steer = car.max_steer
+    elif keys[pygame.K_RIGHT]:
+        steer = -car.max_steer
 
-    def draw(self, screen):
-        rect = pygame.Rect(0, 0, self.w, self.h)
-        rect.center = (int(self.x), int(self.y))
-        pygame.draw.rect(screen, (220, 60, 60), rect)
+    car.step(accel, steer, dt)
 
 
 def main():
-    cfg = load_config(CONFIG_PATH)["sim"]
-    w, h = cfg["window_w"], cfg["window_h"]
+    cfg = load_config(CONFIG_PATH)
+    sim = cfg["sim"]
+    w, h = sim["window_w"], sim["window_h"]
+    px_per_m = sim["px_per_m"]
+    world_w, world_h = w / px_per_m, h / px_per_m
+    origin_px = (0, h)
 
     pygame.init()
     screen = pygame.display.set_mode((w, h))
     pygame.display.set_caption("racer")
     clock = pygame.time.Clock()
 
-    car = Car(w / 2, h / 2)
+    car = Car(cfg, world_w / 2, world_h / 2)
     dt = 0.0
     running = True
 
@@ -58,13 +54,15 @@ def main():
                 running = False
 
         keys = pygame.key.get_pressed()
-        car.update(keys, dt, w, h)
+        drive(car, keys, dt)
+        car.x %= world_w
+        car.y %= world_h
 
-        screen.fill((30, 30, 30))
-        car.draw(screen)
+        screen.fill(BACKGROUND)
+        car.draw(screen, px_per_m, origin_px)
         pygame.display.flip()
 
-        dt = clock.tick(cfg["fps"]) / 1000
+        dt = min(clock.tick(sim["fps"]) / 1000, sim["max_dt"])
 
     pygame.quit()
 
