@@ -4,6 +4,7 @@ import pygame
 import yaml
 
 from racer.sim.car import Car
+from racer.sim.lidar import Lidar
 from racer.sim.track import Track
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
@@ -45,9 +46,12 @@ def main():
     font = pygame.font.SysFont(None, 32)
 
     car = Car(cfg, *track.start_pose)
+    lidar = Lidar(cfg)
+    front = lidar.n_beams // 2
     crashes = 0
     crash_timer = 0.0
     dt = 0.0
+    last_fps_print = 0
     running = True
 
     while running:
@@ -69,16 +73,26 @@ def main():
                 crash_timer = sim["crash_reset_s"]
                 car.v = 0.0
 
+        ranges = lidar.scan(track, car.x, car.y, car.yaw)
+
         track.draw(screen)
+        if cfg["lidar"]["draw_beams"]:
+            lidar.draw(screen, track, car.x, car.y, car.yaw, ranges)
         if crash_timer > 0 and int(crash_timer * 8) % 2 == 0:
             car.draw(screen, track, CRASH_COLOUR)
         else:
             car.draw(screen, track)
         text = font.render(f"crashes: {crashes}", True, (255, 255, 255), (0, 0, 0))
         screen.blit(text, (10, 10))
+        text = font.render(f"front: {ranges[front]:.2f} m", True, (255, 255, 255), (0, 0, 0))
+        screen.blit(text, (10, 40))
         pygame.display.flip()
 
         dt = min(clock.tick(sim["fps"]) / 1000, sim["max_dt"])
+        now = pygame.time.get_ticks()
+        if now - last_fps_print >= 1000:
+            print(f"fps: {clock.get_fps():.1f}", flush=True)
+            last_fps_print = now
 
     pygame.quit()
 

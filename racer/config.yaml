@@ -16,7 +16,12 @@ car:
   length_m: 0.55
   width_m: 0.3
   friction_decel: 1.0
-lidar:         # filled in later
+lidar:
+  n_beams: 108       # beams per scan
+  fov_rad: 4.71      # field of view, 270 deg, centred on the heading
+  max_range_m: 12    # LD19 max range
+  step_m: 0.02       # ray-march step; smaller than any wall (>= 0.1 m) so beams cannot tunnel
+  draw_beams: true
 explore:       # filled in later
 laps:          # filled in later
 mapping:       # filled in later
