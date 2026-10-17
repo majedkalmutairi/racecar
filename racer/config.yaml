@@ -2,10 +2,9 @@
 # Sections are filled in as each part gets built.
 
 sim:
-  window_w: 1000   # window width, pixels
-  window_h: 700    # window height, pixels
+  track: oval      # loads tracks/<track>.png and tracks/<track>.yaml
   fps: 60          # frames per second
-  px_per_m: 100    # pixels per metre when drawing
+  px_per_m: 100    # default pixels per metre; a track's yaml overrides it
   max_dt: 0.05     # longest physics step allowed, seconds
 car:
   wheelbase_m: 0.33

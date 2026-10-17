@@ -42,7 +42,7 @@ class Car:
     def pose(self):
         return self.x, self.y, self.yaw
 
-    def draw(self, screen, px_per_m, origin_px):
+    def draw(self, screen, track):
         hl = self.length / 2
         hw = self.width / 2
         centre = self.L / 2
@@ -52,7 +52,7 @@ class Car:
         def to_px(fx, fy):
             wx = self.x + fx * cos_yaw - fy * sin_yaw
             wy = self.y + fx * sin_yaw + fy * cos_yaw
-            return origin_px[0] + wx * px_per_m, origin_px[1] - wy * px_per_m
+            return track.world_to_px(wx, wy)
 
         corners = [(hl, hw), (hl, -hw), (-hl, -hw), (-hl, hw)]
         points = [to_px(centre + fx, fy) for fx, fy in corners]

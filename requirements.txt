@@ -1,5 +1,6 @@
 numpy
 pygame
 pyyaml
+pillow
 matplotlib
 scipy

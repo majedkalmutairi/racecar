@@ -4,9 +4,9 @@ import pygame
 import yaml
 
 from racer.sim.car import Car
+from racer.sim.track import Track
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
-BACKGROUND = (30, 30, 30)
 
 
 def load_config(path):
@@ -34,17 +34,16 @@ def drive(car, keys, dt):
 def main():
     cfg = load_config(CONFIG_PATH)
     sim = cfg["sim"]
-    w, h = sim["window_w"], sim["window_h"]
-    px_per_m = sim["px_per_m"]
-    world_w, world_h = w / px_per_m, h / px_per_m
-    origin_px = (0, h)
+    track = Track(sim["track"], sim["px_per_m"])
+    world_w = track.w_px / track.px_per_m
+    world_h = track.h_px / track.px_per_m
 
     pygame.init()
-    screen = pygame.display.set_mode((w, h))
+    screen = pygame.display.set_mode((track.w_px, track.h_px))
     pygame.display.set_caption("racer")
     clock = pygame.time.Clock()
 
-    car = Car(cfg, world_w / 2, world_h / 2)
+    car = Car(cfg, *track.start_pose)
     dt = 0.0
     running = True
 
@@ -58,8 +57,8 @@ def main():
         car.x %= world_w
         car.y %= world_h
 
-        screen.fill(BACKGROUND)
-        car.draw(screen, px_per_m, origin_px)
+        track.draw(screen)
+        car.draw(screen, track)
         pygame.display.flip()
 
         dt = min(clock.tick(sim["fps"]) / 1000, sim["max_dt"])
