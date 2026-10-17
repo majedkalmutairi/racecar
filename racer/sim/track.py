@@ -28,6 +28,12 @@ class Track:
         row = int(self.h_px - y_m * self.px_per_m)
         return col, row
 
+    def is_wall(self, x_m, y_m):
+        col, row = self.world_to_px(x_m, y_m)
+        if col < 0 or col >= self.w_px or row < 0 or row >= self.h_px:
+            return True
+        return bool(self.wall[row, col])
+
     def px_to_world(self, col, row):
         x_m = col / self.px_per_m
         y_m = (self.h_px - row) / self.px_per_m

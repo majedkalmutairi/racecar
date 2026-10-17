@@ -2,6 +2,8 @@ import math
 
 import pygame
 
+from racer.sim.geometry import car_corners, rotate_point
+
 BODY_COLOUR = (220, 60, 60)
 HEADING_COLOUR = (255, 255, 255)
 
@@ -42,19 +44,17 @@ class Car:
     def pose(self):
         return self.x, self.y, self.yaw
 
-    def draw(self, screen, track):
-        hl = self.length / 2
-        hw = self.width / 2
+    def corners(self):
+        return car_corners(self.x, self.y, self.yaw, self.length, self.width, self.L / 2)
+
+    def draw(self, screen, track, colour=BODY_COLOUR):
+        points = [track.world_to_px(cx, cy) for cx, cy in self.corners()]
+        pygame.draw.polygon(screen, colour, points)
+
         centre = self.L / 2
-        cos_yaw = math.cos(self.yaw)
-        sin_yaw = math.sin(self.yaw)
-
-        def to_px(fx, fy):
-            wx = self.x + fx * cos_yaw - fy * sin_yaw
-            wy = self.y + fx * sin_yaw + fy * cos_yaw
-            return track.world_to_px(wx, wy)
-
-        corners = [(hl, hw), (hl, -hw), (-hl, -hw), (-hl, hw)]
-        points = [to_px(centre + fx, fy) for fx, fy in corners]
-        pygame.draw.polygon(screen, BODY_COLOUR, points)
-        pygame.draw.line(screen, HEADING_COLOUR, to_px(centre, 0), to_px(centre + hl, 0), 3)
+        nose = centre + self.length / 2
+        cx, cy = rotate_point(centre, 0, self.yaw)
+        nx, ny = rotate_point(nose, 0, self.yaw)
+        start = track.world_to_px(self.x + cx, self.y + cy)
+        end = track.world_to_px(self.x + nx, self.y + ny)
+        pygame.draw.line(screen, HEADING_COLOUR, start, end, 3)

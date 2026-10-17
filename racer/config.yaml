@@ -6,6 +6,7 @@ sim:
   fps: 60          # frames per second
   px_per_m: 100    # default pixels per metre; a track's yaml overrides it
   max_dt: 0.05     # longest physics step allowed, seconds
+  crash_reset_s: 1.0  # how long the car flashes after a crash before going back to start
 car:
   wheelbase_m: 0.33
   max_speed_mps: 8
