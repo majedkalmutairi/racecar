@@ -16,6 +16,7 @@ car:
   length_m: 0.55
   width_m: 0.3
   friction_decel: 1.0
+  speed_kp: 3.0      # P gain: accel = speed_kp * (target speed - speed)
 lidar:
   n_beams: 108       # beams per scan
   fov_rad: 4.71      # field of view, 270 deg, centred on the heading
