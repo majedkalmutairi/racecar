@@ -1,12 +1,13 @@
 # Every tunable number in the project lives in this file, nowhere else.
-# Sections are filled in as each part gets built.
 
 sim:
-  track: oval      # loads tracks/<track>.png and tracks/<track>.yaml
-  fps: 60          # frames per second
-  px_per_m: 100    # default pixels per metre; a track's yaml overrides it
-  max_dt: 0.05     # longest physics step allowed, seconds
+  track: oval         # loads tracks/<track>.png and tracks/<track>.yaml
+  fps: 60
+  px_per_m: 100       # default pixels per metre; a track's yaml overrides it
+  max_dt: 0.05        # longest physics step allowed, seconds
   crash_reset_s: 1.0  # how long the car flashes after a crash before going back to start
+  seed: 0             # lidar noise seed; --seed overrides
+  swap_margin_m: 0.4  # a track swap waits until the new walls are at least this far from the car
 car:
   wheelbase_m: 0.33
   max_speed_mps: 8
@@ -16,27 +17,82 @@ car:
   length_m: 0.55
   width_m: 0.3
   friction_decel: 1.0
-  speed_kp: 3.0      # P gain: accel = speed_kp * (target speed - speed)
+  speed_kp: 3.0       # accel = speed_kp * (target speed - speed)
 lidar:
-  n_beams: 108       # beams per scan
-  fov_rad: 4.71      # field of view, 270 deg, centred on the heading
-  max_range_m: 12    # LD19 max range
-  step_m: 0.02       # ray-march step; smaller than any wall (>= 0.1 m) so beams cannot tunnel
+  n_beams: 108
+  fov_rad: 4.71       # 270 deg, centred on the heading
+  max_range_m: 12     # LD19 max range
+  step_m: 0.02        # ray-march step; smaller than any wall so beams cannot tunnel
+  noise_m: 0.01       # gaussian range noise, 1 sigma
   draw_beams: true
 explore:
-  speed_mps: 0.8         # first-lap speed, never above 1 m/s (CLAUDE.md §9)
-  steer_k: 0.6           # P gain: steer = steer_k * (left - right)
-  side_beams: 5          # beams averaged around +side_angle and -side_angle
-  side_angle_rad: 1.2    # side beams at +-69 deg: looking a bit ahead damps the weave (+-90 deg crashed on hairpin)
-  front_slow_m: 1.5      # slow down when the front beam is shorter than this
-  front_slow_factor: 0.5 # speed multiplier while slowed
+  speed_mps: 0.8      # first-lap speed, never above 1 m/s
+  steer_k: 0.6        # steer = steer_k * (left - right)
+  side_beams: 5       # beams averaged around +side_angle and -side_angle
+  side_angle_rad: 1.2 # +-69 deg: looking a bit ahead damps the weave (+-90 deg crashed)
+  front_slow_m: 1.5   # slow down when the front beam is shorter than this
+  front_slow_factor: 0.5
+  avoid_fov_rad: 0.8  # beams within +-46 deg push the car away from near things
+  avoid_m: 1.2        # ...when they are closer than this
+  avoid_k: 0.6
 laps:
-  radius_m: 0.5          # a lap ends when the car re-enters this circle around the start
-  min_lap_s: 3           # ...and at least this long after the last lap
+  radius_m: 0.5       # a lap ends when the car re-enters this circle around the start
+  min_lap_s: 3        # ...and at least this long after the last lap
   csv_path: logs/laps.csv
-mapping:       # filled in later
-plan:          # filled in later
-race:          # filled in later
-learning:      # filled in later
-safety:        # filled in later
-track_change:  # filled in later
+mapping:
+  size_m: 20          # grid covers -10..+10 m in x and y
+  res_m: 0.05         # one cell = 5 cm
+  min_hits: 3         # a cell is a wall once this many beams ended in it
+  map_dir: logs
+plan:
+  ds_m: 0.1           # spacing of centerline and racing-line points
+  snap_search_m: 1.0  # how far sideways a path point may slide to reach the ridge
+  snap_iters: 3
+  center_smooth_iters: 10
+  margin_m: 0.3       # racing line keeps this far from the wall: half the car plus more than the reflex margin
+  smooth_iters: 200
+  smooth_alpha: 0.3
+  a_lat_max: 3.0      # corner grip, m/s^2: v = sqrt(a_lat_max * R)
+  a_brake: 4.0
+  a_accel: 2.5
+  kappa_eps: 1.0e-3   # straight = curvature below this
+  replan_cells: 5     # this many new wall cells away from the known walls while racing = new obstacle, replan
+  replan_cooldown_s: 3.0
+race:
+  ld_k: 0.4           # lookahead = ld_k * speed, clipped to [ld_min, ld_max]
+  ld_min_m: 0.5
+  ld_max_m: 2.0
+  search_window: 30   # nearest-point search looks this many points ahead of the last match
+learning:
+  n_sections: 20
+  start_mult: 0.6     # first race lap runs at 60 % of the speed profile
+  up: 0.08            # clean section: multiplier * (1 + up)
+  down: 0.15          # problem section: multiplier * (1 - down)
+  min_mult: 0.2
+  max_mult: 1.1
+  err_ok_m: 0.12      # lateral error above this marks the section as a problem
+safety:
+  ttc_s: 0.6            # slow down when the predicted path hits something sooner than this
+  fov_deg: 180          # only beams within +-90 deg can be on the path ahead
+  body_margin_m: 0.1    # a hit counts if it is within this of the shape the car body sweeps
+  v_min_mps: 0.05       # speed floor in the ttc division, so a stopped car still reacts to contact
+  hold_s: 0.5           # stay in charge this long after the last trigger
+  escape_clear_m: 0.8   # the controller gets the car back once its path is free for this far
+  stop_clear_m: 0.4     # below this much room in the escape direction the car stops entirely
+  escape_speed_mps: 1.0 # never faster than this while off the plan
+  brake_speed_mps: 0.0
+  gap_range_m: 1.5      # beams longer than this count as open when looking for the widest gap
+  bubble_m: 0.4         # beams this close to the nearest hit are blanked before the gap search
+  steer_options: 17     # steering angles tried when no gap is open at all
+  events_csv: logs/events.csv
+track_change:
+  threshold: 0.35     # fraction of beams that miss the map
+  hold_s: 2.0         # ...for this long before the map is thrown away
+  cell_tol: 2         # a beam "hits the map" if a wall cell is within this many cells
+obstacles:            # known boxes per track: [x, y, w, h] in metres, used with --obstacles
+  oval: [[8.0, 0.75, 0.3, 0.3]]
+  hairpin: [[5.0, 1.25, 0.3, 0.3]]
+  chicane: [[4.0, 1.3, 0.3, 0.3]]
+dashboard:
+  panel_w: 300
+  graph_len: 200

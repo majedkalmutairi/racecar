@@ -4,3 +4,4 @@ pyyaml
 pillow
 matplotlib
 scipy
+pytest

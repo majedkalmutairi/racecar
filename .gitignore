@@ -8,3 +8,7 @@ logs/*.csv
 logs/*.bag*
 logs/*.png
 logs/*.npy
+
+# plan files and experiment copies
+logs/*.npz
+logs/exp/

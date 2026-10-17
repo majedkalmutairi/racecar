@@ -3,21 +3,22 @@ import math
 import numpy as np
 import pygame
 
+from racer.interface import beam_angles
+
 BEAM_COLOUR = (0, 140, 220)
 
 
 class Lidar:
-    def __init__(self, cfg):
+    def __init__(self, cfg, seed=0):
         lid = cfg["lidar"]
-        self.n_beams = lid["n_beams"]
-        self.fov = lid["fov_rad"]
         self.max_range = float(lid["max_range_m"])
         self.step = lid["step_m"]
-        # beam 0 = far right, last = far left, middle = straight ahead
-        self.angles = np.linspace(-self.fov / 2, self.fov / 2, self.n_beams)
+        self.noise = lid["noise_m"]
+        self.angles = beam_angles(cfg)
+        self.rng = np.random.default_rng(seed)
 
     def scan(self, track, x, y, yaw):
-        ranges = np.full(self.n_beams, self.max_range)
+        ranges = np.full(len(self.angles), self.max_range)
         for i, a in enumerate(self.angles):
             theta = yaw + a
             c, s = math.cos(theta), math.sin(theta)
@@ -27,7 +28,10 @@ class Lidar:
                     break
                 d += self.step
             ranges[i] = min(d, self.max_range)
-        return ranges
+
+        hit = ranges < self.max_range
+        ranges[hit] += self.rng.normal(0.0, self.noise, int(hit.sum()))
+        return np.clip(ranges, 0.0, self.max_range)
 
     def draw(self, screen, track, x, y, yaw, ranges):
         start = track.world_to_px(x, y)
