@@ -29,7 +29,10 @@ explore:
   side_beams: 5          # beams averaged around +90 and -90 deg
   front_slow_m: 1.5      # slow down when the front beam is shorter than this
   front_slow_factor: 0.5 # speed multiplier while slowed
-laps:          # filled in later
+laps:
+  radius_m: 0.5          # a lap ends when the car re-enters this circle around the start
+  min_lap_s: 3           # ...and at least this long after the last lap
+  csv_path: logs/laps.csv
 mapping:       # filled in later
 plan:          # filled in later
 race:          # filled in later

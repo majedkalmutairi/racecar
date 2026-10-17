@@ -3,10 +3,12 @@ from pathlib import Path
 import pygame
 import yaml
 
+from racer.laps import LapCounter, open_lap_log
 from racer.modes.explore import ExploreController
 from racer.sim.sim_car import SimCar
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_config(path):
@@ -37,7 +39,11 @@ def main():
     font = pygame.font.SysFont(None, 32)
 
     ctrl = ExploreController(cfg)
+    laps = LapCounter(car.start_pose, cfg)
+    log_file, log = open_lap_log(REPO_ROOT / cfg["laps"]["csv_path"])
     autonomous = False
+    sim_t = 0.0             # simulated time: the sum of dt, not the wall clock
+    crashes_at_lap_start = 0
     dt = 0.0
     running = True
 
@@ -47,6 +53,10 @@ def main():
                 running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_a:
                 autonomous = not autonomous
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                car.reset(clear_crashes=True)
+                laps.reset(sim_t)
+                crashes_at_lap_start = 0
 
         auto_speed, auto_steer = ctrl.step(car.get_scan())   # always run, so the readout is live
         if autonomous:
@@ -54,12 +64,30 @@ def main():
         else:
             speed, steer = keyboard(pygame.key.get_pressed(), cfg)
         car.set_drive(speed, steer)
-        car.update(dt)
+        if car.update(dt):
+            laps.restart(sim_t)      # car was put back at the start: the running lap doesn't count
+        sim_t += dt
+
+        lap_time = laps.update(car.get_pose(), sim_t)
+        if lap_time is not None:
+            log.writerow({
+                "lap_number": laps.count,
+                "lap_time_s": round(lap_time, 2),
+                "crashes": car.crashes - crashes_at_lap_start,
+                "mode": "explore" if autonomous else "manual",
+            })
+            log_file.flush()
+            crashes_at_lap_start = car.crashes
 
         car.draw(screen)
         left, right, front, ctrl_steer = ctrl.last
         mode = "explore (A)" if autonomous else "manual (A)"
-        lines = [mode, f"L: {left:.2f}  R: {right:.2f}  F: {front:.2f}  steer: {ctrl_steer:.2f}"]
+        last = f"{laps.last_lap_time:.1f} s" if laps.last_lap_time is not None else "-"
+        lines = [
+            mode,
+            f"L: {left:.2f}  R: {right:.2f}  F: {front:.2f}  steer: {ctrl_steer:.2f}",
+            f"lap {laps.count + 1}  t: {laps.current_lap_s(sim_t):.1f} s  last: {last}",
+        ]
         for i, line in enumerate(lines):
             text = font.render(line, True, (255, 255, 255), (0, 0, 0))
             screen.blit(text, (10, 40 + 30 * i))
@@ -67,6 +95,7 @@ def main():
 
         dt = min(clock.tick(cfg["sim"]["fps"]) / 1000, cfg["sim"]["max_dt"])
 
+    log_file.close()
     pygame.quit()
 
 

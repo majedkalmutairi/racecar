@@ -49,7 +49,9 @@ class SimCar(CarInterface):
     def size_px(self):
         return self.track.w_px, self.track.h_px
 
-    def reset(self):
+    def reset(self, clear_crashes=False):
+        if clear_crashes:
+            self.crashes = 0
         self.car.x, self.car.y, self.car.yaw = self.track.start_pose
         self.car.v = 0.0
         self.crash_timer = 0.0
