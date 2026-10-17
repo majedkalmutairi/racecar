@@ -45,6 +45,29 @@ def arc(cx, cy, r, a0, a1, n=200):
     return [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in np.linspace(a0, a1, n)]
 
 
+def rounded(corners, r):
+    """Closed polygon -> the same loop with every corner replaced by an arc of radius r (smaller if the sides are short)."""
+    pts = []
+    n = len(corners)
+    for i in range(n):
+        p = np.array(corners[i], float)
+        u = np.array(corners[i - 1]) - p
+        v = np.array(corners[(i + 1) % n]) - p
+        len_u, len_v = np.linalg.norm(u), np.linalg.norm(v)
+        u, v = u / len_u, v / len_v
+        half = math.acos(np.clip(np.dot(u, v), -1, 1)) / 2
+        t = min(r / math.tan(half), 0.45 * len_u, 0.45 * len_v)
+        radius = t * math.tan(half)
+        bisector = (u + v) / np.linalg.norm(u + v)
+        centre = p + bisector * radius / math.sin(half)
+        a0 = math.atan2(*(p + u * t - centre)[::-1])
+        a1 = math.atan2(*(p + v * t - centre)[::-1])
+        sweep = (a1 - a0 + math.pi) % (2 * math.pi) - math.pi
+        pts += [tuple(centre + radius * np.array([math.cos(a0 + f * sweep), math.sin(a0 + f * sweep)]))
+                for f in np.linspace(0, 1, 12)]
+    return pts
+
+
 # oval: two ellipses, 1.4 m lane
 def draw_oval(draw):
     draw.ellipse((30, 30, 970, 670), fill="white")
@@ -83,7 +106,16 @@ def chicane_centreline():
     return pts
 
 
+# twisty: a loop with a deep pocket from the top and a diagonal on the left, nine corners, 1.2 m wide
+TWISTY = [(2.5, 1.0), (9.0, 1.0), (9.0, 6.1), (6.5, 6.1), (6.5, 3.9), (4.3, 3.9), (4.3, 6.1), (1.0, 6.1), (1.0, 3.6)]
+
+# snake: four columns joined by three hairpins, return straight along the top, 1.2 m wide
+SNAKE = [(1.0, 6.1), (1.0, 1.0), (3.2, 1.0), (3.2, 4.5), (5.4, 4.5), (5.4, 1.0), (7.6, 1.0), (7.6, 6.1)]
+
+
 if __name__ == "__main__":
     save_track("oval", draw_oval, (5.0, 1.0, 0.0))
     save_track("hairpin", lambda d: corridor(d, hairpin_centreline(), 1.2), hairpin_start())
     save_track("chicane", lambda d: corridor(d, chicane_centreline(), 1.3), ((CL + CR) / 2, CY - R_END, 0.0))
+    save_track("twisty", lambda d: corridor(d, rounded(TWISTY, 1.0), 1.2), (5.5, 1.0, 0.0))
+    save_track("snake", lambda d: corridor(d, rounded(SNAKE, 1.0), 1.2), (4.5, 6.1, math.pi))

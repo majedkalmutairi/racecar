@@ -1,0 +1,2 @@
+start_pose: {x_m: 4.5, y_m: 6.1, yaw_rad: 3.1416}
+px_per_m: 100

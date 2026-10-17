@@ -15,6 +15,7 @@ class ExploreController:
         self.front_slow_factor = ex["front_slow_factor"]
         self.avoid_m = ex["avoid_m"]
         self.avoid_k = ex["avoid_k"]
+        self.max_steer = cfg["car"]["max_steer_rad"]
 
         angles = beam_angles(cfg)
         side = ex["side_angle_rad"]
@@ -43,5 +44,6 @@ class ExploreController:
         if front < self.front_slow_m:
             speed *= self.front_slow_factor
 
+        steer = max(-self.max_steer, min(self.max_steer, steer))
         self.last = (left, right, front, steer)
         return speed, steer

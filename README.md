@@ -60,6 +60,14 @@ learns the new track.
 
 More numbers, the multiplier plots and the obstacle runs: [docs/results_sim.md](docs/results_sim.md).
 
+## Tracks
+
+Five tracks in `tracks/`, all 1.2 to 1.4 m wide: `oval`, `hairpin` (one 1 m radius turn), `chicane` (two S-bends),
+`twisty` (a deep pocket and a diagonal, nine corners) and `snake` (four columns joined by three hairpins). New
+tracks are a list of corner points in `tools/make_tracks.py`; corners are rounded to a 1 m radius, which is about
+the tightest this car turns cleanly. On `twisty` the car goes from a 45 s explore lap to 9.7 s, on `snake` from
+49 s to 10.7 s.
+
 ## Running it
 
 ```
@@ -71,7 +79,7 @@ python -m racer.sim.main --track oval --drop-box 6.33 0.65 0.3 0.3 --drop-at-lap
 python -m pytest tests                                # 31 unit tests
 python tools/plot_plan.py oval                        # map, centerline, racing line, speed profile of the last run
 python tools/run_experiments.py && python tools/plot_learning.py   # the plots above, a few minutes
-python tools/make_tracks.py                           # regenerate tracks/oval, hairpin, chicane
+python tools/make_tracks.py                           # regenerate the five tracks
 ```
 
 Every number lives in [racer/config.yaml](racer/config.yaml). Runs write `logs/laps.csv`, `logs/events.csv` and
