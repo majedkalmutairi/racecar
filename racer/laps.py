@@ -2,7 +2,7 @@ import csv
 import math
 from pathlib import Path
 
-LAP_FIELDS = ["lap_number", "lap_time_s", "crashes", "mode"]
+LAP_FIELDS = ["track", "lap_number", "lap_time_s", "crashes", "mode"]
 
 
 def open_lap_log(path):

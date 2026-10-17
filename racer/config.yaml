@@ -26,7 +26,8 @@ lidar:
 explore:
   speed_mps: 0.8         # first-lap speed, never above 1 m/s (CLAUDE.md §9)
   steer_k: 0.6           # P gain: steer = steer_k * (left - right)
-  side_beams: 5          # beams averaged around +90 and -90 deg
+  side_beams: 5          # beams averaged around +side_angle and -side_angle
+  side_angle_rad: 1.2    # side beams at +-69 deg: looking a bit ahead damps the weave (+-90 deg crashed on hairpin)
   front_slow_m: 1.5      # slow down when the front beam is shorter than this
   front_slow_factor: 0.5 # speed multiplier while slowed
 laps:

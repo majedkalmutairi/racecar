@@ -11,12 +11,13 @@ class ExploreController:
         self.side_beams = ex["side_beams"]
         self.front_slow_m = ex["front_slow_m"]
         self.front_slow_factor = ex["front_slow_factor"]
+        side = ex["side_angle_rad"]
 
         n = cfg["lidar"]["n_beams"]
         fov = cfg["lidar"]["fov_rad"]
         angles = np.linspace(-fov / 2, fov / 2, n)
-        self.i_left = int(np.argmin(np.abs(angles - np.pi / 2)))
-        self.i_right = int(np.argmin(np.abs(angles + np.pi / 2)))
+        self.i_left = int(np.argmin(np.abs(angles - side)))
+        self.i_right = int(np.argmin(np.abs(angles + side)))
         self.i_front = n // 2
         self.last = (0.0, 0.0, 0.0, 0.0)   # left, right, front, steer: for the on-screen readout
 
