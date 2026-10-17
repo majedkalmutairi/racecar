@@ -1,14 +1,18 @@
 from pathlib import Path
 
-import numpy as np
 import pygame
 import yaml
 
 TRACKS_DIR = Path(__file__).resolve().parents[2] / "tracks"
 
 
+def track_names():
+    return sorted(p.stem for p in TRACKS_DIR.glob("*.png"))
+
+
 class Track:
     def __init__(self, name, default_px_per_m):
+        self.name = name
         image = pygame.image.load(TRACKS_DIR / f"{name}.png")
         rgb = pygame.surfarray.array3d(image).transpose(1, 0, 2)
         self.wall = rgb[:, :, 0] < 128
@@ -28,16 +32,21 @@ class Track:
         row = int(self.h_px - y_m * self.px_per_m)
         return col, row
 
+    def px_to_world(self, col, row):
+        return col / self.px_per_m, (self.h_px - row) / self.px_per_m
+
     def is_wall(self, x_m, y_m):
         col, row = self.world_to_px(x_m, y_m)
         if col < 0 or col >= self.w_px or row < 0 or row >= self.h_px:
             return True
         return bool(self.wall[row, col])
 
-    def px_to_world(self, col, row):
-        x_m = col / self.px_per_m
-        y_m = (self.h_px - row) / self.px_per_m
-        return x_m, y_m
+    def add_box(self, x_m, y_m, w_m, h_m):
+        """Paint a black box into the wall mask so the lidar and the crash check both see it."""
+        left, bottom = self.world_to_px(x_m, y_m)
+        right, top = self.world_to_px(x_m + w_m, y_m + h_m)
+        self.wall[top:bottom, left:right] = True
+        pygame.draw.rect(self.surface, (0, 0, 0), (left, top, right - left, bottom - top))
 
     def draw(self, screen):
         if not self._converted:

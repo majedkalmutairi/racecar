@@ -45,13 +45,13 @@ def arc(cx, cy, r, a0, a1, n=200):
     return [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in np.linspace(a0, a1, n)]
 
 
-# --- oval: two ellipses, 1.4 m lane (same as the old tools/make_oval.py) ---
+# oval: two ellipses, 1.4 m lane
 def draw_oval(draw):
     draw.ellipse((30, 30, 970, 670), fill="white")
     draw.ellipse((170, 170, 830, 530), fill="black")
 
 
-# --- hairpin: big 2.4 m turn on the left, tight 1.0 m turn on the right, 1.2 m wide ---
+# hairpin: 2.4 m turn on the left, 1.0 m turn on the right, 1.2 m wide
 C1, R1 = (3.3, 3.5), 2.4
 C2, R2 = (8.2, 3.5), 1.0
 ALPHA = math.acos((R1 - R2) / (C2[0] - C1[0]))   # where the straights touch the circles
@@ -68,7 +68,7 @@ def hairpin_start():
     return ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, math.atan2(p2[1] - p1[1], p2[0] - p1[0]))
 
 
-# --- chicane: stadium loop, the top straight dips 0.7 m down and back up (two S-bends), 1.3 m wide ---
+# chicane: stadium whose top straight dips 0.7 m and comes back, 1.3 m wide
 CL, CR, R_END, CY = 2.8, 7.2, 1.9, 3.5
 DIP_M = 0.7
 

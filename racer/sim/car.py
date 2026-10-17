@@ -37,6 +37,7 @@ class Car:
         self.x += self.v * math.cos(self.yaw) * dt
         self.y += self.v * math.sin(self.yaw) * dt
         self.yaw += self.v / self.L * math.tan(steer) * dt
+        self.yaw = (self.yaw + math.pi) % (2 * math.pi) - math.pi
         self.v += accel * dt
 
         self.v = clamp(self.v, 0.0, self.max_speed)
