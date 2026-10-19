@@ -1,6 +1,10 @@
 import numpy as np
 
-from racer.planning.speed_profile import backward_pass, curvature, forward_pass, max_speed_from_curvature
+import yaml
+from pathlib import Path
+
+from racer.planning.speed_profile import (backward_pass, build_speed_profile, curvature, forward_pass, grip_left,
+                                           max_speed_from_curvature)
 
 
 def circle(radius, n=100):
@@ -26,3 +30,16 @@ def test_passes_limit_speed_change_between_points():
     v = forward_pass(v, 2.5, 0.1)
     dv2 = np.abs(np.diff(np.r_[v, v[0]] ** 2))
     assert np.all(dv2 <= 2 * 4.0 * 0.1 + 1e-6)
+
+
+def test_a_corner_at_the_limit_leaves_no_grip_for_braking():
+    assert grip_left(5.0, 3.0, 0.0, 8.0) == 5.0                          # straight: all of it
+    assert grip_left(5.0, 2.0, 2.0, 8.0) == 0.0                          # 2^2 * 2 = 8 = all the grip
+    assert abs(grip_left(5.0, 2.0, 1.0, 8.0) - 5.0 * np.sqrt(0.75)) < 1e-9
+
+
+def test_more_grip_is_faster_everywhere():
+    cfg = yaml.safe_load(open(Path(__file__).resolve().parent.parent / "racer" / "config.yaml"))
+    ring = circle(1.5)
+    slow, fast = build_speed_profile(ring, cfg, 3.0), build_speed_profile(ring, cfg, 6.0)
+    assert np.all(fast > slow)

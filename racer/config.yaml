@@ -7,7 +7,7 @@ sim:
   max_dt: 0.05        # longest physics step allowed, seconds
   crash_reset_s: 1.0  # how long the car flashes after a crash before going back to start
   seed: 0             # lidar noise seed; --seed overrides
-  swap_margin_m: 0.4  # a track swap waits until the new walls are at least this far from the car
+  swap_margin_m: 0.3  # a track swap waits until the new walls are at least this far from the car
 car:
   wheelbase_m: 0.33
   max_speed_mps: 8
@@ -53,9 +53,13 @@ plan:
   snap_iters: 3
   center_smooth_iters: 10
   margin_m: 0.3       # racing line keeps this far from the wall: half the car plus more than the reflex margin
-  wall_clear_m: 0.35  # ...and never comes closer than this to any mapped wall or box: half the car + 0.2 m for tracking error
-  smooth_iters: 200
+  wall_clear_m: 0.35  # the racing line never comes closer than this to any mapped wall or box: half the car + 0.2 m for tracking error
+  smooth_iters: 200     # the simple smoothed line, only used without a map
   smooth_alpha: 0.3
+  mincurv_step_m: 0.3   # minimum-curvature line: one free offset every this many metres...
+  mincurv_iters: 3      # ...solved this many times around its own result
+  mincurv_length_w: 0.1 # weight on length against bending (0 = pure minimum curvature)
+  mincurv_buffer_m: 0.05  # extra room kept, because the line cuts a little closer between solver points
   a_lat_max: 6.0      # corner grip the plan assumes, m/s^2: v = sqrt(a_lat_max * R); learning finds the rest
   a_brake: 5.0
   a_accel: 4.0
@@ -68,6 +72,9 @@ race:
   ld_min_m: 0.5
   ld_max_m: 2.0
   search_window: 30   # nearest-point search looks this many points ahead of the last match
+  speed_lead_s: 0.12  # command the planned speed this far ahead in time (the speed controller's lag, ~1/speed_kp)
+  cut_max_m: 0.06     # in bends the lookahead shrinks so pure pursuit cuts the corner by at most this...
+  ld_floor_m: 0.3     # ...but never below this
   trust_err_m: 0.2    # the reflex trusts the plan while the car is this close to the line...
   trust_heading_rad: 0.4  # ...and pointing along it
   trust_horizon_m: 1.0    # line checked this far beyond the stopping distance
@@ -83,7 +90,8 @@ learning:
   probe: 0.04         # the ceiling is raised this much to try again
   min_mult: 0.2
   max_mult: 2.5       # no real cap: grip and tracking error decide
-  err_ok_m: 0.12      # lateral error above this marks the section as a problem
+  err_ok_m: 0.12      # lateral error above this marks the section as a problem...
+  settle_s: 1.5       # ...except for this long after a new plan or a reset, while the car gets onto the line
 safety:
   ttc_s: 0.6            # slow down when the predicted path hits something sooner than this
   fov_deg: 180          # only beams within +-90 deg can be on the path ahead

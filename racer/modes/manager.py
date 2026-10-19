@@ -48,6 +48,7 @@ class ModeManager:
         self.lap_crashes = 0
         self.cmd = (0.0, 0.0)
         self.sent = (0.0, 0.0)
+        self.settle_until = 0.0
         self.last_pose = self.last_t = self.last_v = None
         self.slipping = False
         self.mode = None
@@ -85,7 +86,7 @@ class ModeManager:
         if self.mode is Mode.EXPLORE:
             cmd = self._explore(scan, pose)
         elif self.mode is Mode.PLAN:
-            cmd = self._plan(scan, pose)
+            cmd = self._plan(scan, pose, t_now)
         elif self.mode is Mode.RACE:
             cmd = self._race(scan, pose, v, t_now)
         else:
@@ -114,6 +115,8 @@ class ModeManager:
         if self.racer is not None:
             err = lateral_error(pose, self.line, self.racer.idx)
             trouble = active or self.recovery.reversing or self.slipping
+            if t_now < self.settle_until:
+                err = 0.0                   # still getting onto a new line: being off it is not the section's fault
             self.learner.observe(self.racer.idx, err, trouble, car.crashed)
         self.sent = out
         return out
@@ -140,13 +143,13 @@ class ModeManager:
             self._enter(Mode.PLAN)
         return self.explore.step(scan)
 
-    def _plan(self, scan, pose):
+    def _plan(self, scan, pose, t_now):
         self.detector = ChangeDetector(self.grid, self.angles, self.cfg, self.max_range)
-        self._build_plan(self.path, pose)
+        self._build_plan(self.path, pose, t_now)
         self._enter(Mode.RACE)
         return self.explore.step(scan)
 
-    def _build_plan(self, seed, pose):
+    def _build_plan(self, seed, pose, t_now):
         """Map + an ordered loop of seed points -> centerline, racing line, speed profile, and the objects that use them."""
         cfg = self.cfg
         self.center, self.width = build_centerline(self.grid, seed, cfg)
@@ -155,6 +158,7 @@ class ModeManager:
         self._save_plan()
 
         self.racer = PurePursuit(self.line, self.speed, cfg)
+        self.settle_until = t_now + cfg["learning"]["settle_s"]
         self.racer.relocate(pose)
         if self.learner is None:
             self.learner = SectionLearner(len(self.line), cfg, self._file("mult.npy"))
@@ -197,7 +201,7 @@ class ModeManager:
         plan = self.cfg["plan"]
         if self.new_cells >= plan["replan_cells"] and t_now - self.last_replan_t >= plan["replan_cooldown_s"]:
             print(f"[plan] {self.new_cells} new wall cells away from the known walls: replanning around them")
-            self._build_plan(self.center, pose)
+            self._build_plan(self.center, pose, t_now)
             self.last_replan_t = t_now
 
     def _track_changed(self, pose, t_now):
@@ -220,6 +224,7 @@ class ModeManager:
         else:
             self.laps.restart(t_now)
             if self.racer is not None:
+                self.settle_until = t_now + self.cfg["learning"]["settle_s"]
                 self.learner.crashed_at(self.racer.idx)
                 self.racer.multiplier = self.learner.multiplier_per_point()
                 self.racer.relocate(pose)

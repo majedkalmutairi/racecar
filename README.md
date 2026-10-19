@@ -22,10 +22,13 @@ Every frame the mode manager reads the lidar, the pose and the speed through one
 
 1. **EXPLORE**: 0.8 m/s, stay centred between the walls, count every lidar hit into an occupancy grid.
 2. **PLAN** (once, when the car is back at its start): slide the explore path onto the ridge of the distance
-   transform to get the centerline, smooth it into a racing line that keeps 0.3 m from the walls, and compute a
-   speed profile from curvature (`v = sqrt(a_lat_max / |kappa|)`) with braking and acceleration limits.
-3. **RACE**: pure pursuit on the racing line. The line is cut into 20 sections and each section has a speed
-   multiplier that starts at 0.6 and a confidence: its clean laps in a row. A clean lap pushes the section up by
+   transform to get the centerline, then solve for the minimum-curvature racing line that keeps 0.35 m from every
+   wall and box (one bounded least-squares problem), and compute a speed profile from grip (`v = sqrt(grip * R)`)
+   where braking and accelerating only get the grip a corner leaves (friction ellipse).
+3. **RACE**: pure pursuit on the racing line, with a lookahead that shrinks in bends so the car cuts corners by at
+   most 6 cm, and the planned speed commanded a moment ahead to make up for the speed controller's lag. The line is
+   cut into 20 sections and each section has a speed multiplier (it stands for the section's grip, rebuilt into the
+   speed profile every lap) that starts at 0.6 and a confidence: its clean laps in a row. A clean lap pushes the section up by
    5 % times its confidence (up to 15 % a lap); a problem (the car slid, left the line by more than 0.12 m, the
    reflex had to brake, or it crashed) backs it off 10 % (25 % for a crash), resets the confidence and remembers
    that speed as a ceiling to stay just under, and to try again past after three clean laps. Slides are spotted by
@@ -56,9 +59,9 @@ code will run on the car with a `RosCar` behind the interface.
 
 | track   | explore lap | first race lap | lap 15 |
 |---------|------------:|---------------:|-------:|
-| oval    | 26 s | 8.2 s | 4.4 s |
-| hairpin | 29 s | 9.2 s | 5.4 s |
-| chicane | 28 s | 9.2 s | 5.4 s |
+| oval    | 26 s | 8.0 s | 4.2 s |
+| hairpin | 29 s | 8.5 s | 4.7 s |
+| chicane | 28 s | 9.7 s | 5.1 s |
 
 ![oval learning curve](docs/plots/laptime_vs_lap_oval.png)
 
@@ -81,8 +84,9 @@ nine tenths of candidates pass, and the generator just tries the next one.
 ![random tracks](docs/plots/bench_gallery.png)
 
 90 random tracks (30 per difficulty, 10 laps each, all three kinds of boxes) all finish without a crash, and on
-every one the best lap beats the first race lap by 45 to 47 %. 300 larger tracks: also 300 of 300. With reverse
-recovery switched off, 57 of those 300 runs end with the car parked against a box or a wall (27 % of the hard ones).
+every one the best lap beats the first race lap by 43 to 44 %. 300 larger tracks: 299 of 300, no crash. With
+reverse recovery switched off, 53 of those 300 runs end with the car parked against a box or a wall (30 % of the
+hard ones).
 
 ![improvement](docs/plots/bench_improvement.png)
 
@@ -90,8 +94,8 @@ recovery switched off, 57 of those 300 runs end with the car parked against a bo
 
 Five hand-made tracks in `tools/make_tracks.py`, all 1.2 to 1.4 m wide: `oval`, `hairpin` (one 1 m radius turn),
 `chicane` (two S-bends), `twisty` (a deep pocket and a diagonal, nine corners) and `snake` (four columns joined by
-three hairpins). Corners are rounded to a 1 m radius, which is about the tightest this car turns cleanly. On `twisty` the car goes from a 45 s explore lap to 7.3 s,
-on `snake` from 50 s to 8.1 s.
+three hairpins). Corners are rounded to a 1 m radius, which is about the tightest this car turns cleanly. On `twisty` the car goes from a 45 s explore lap to 6.7 s,
+on `snake` from 50 s to 7.5 s.
 
 ## Running it
 
@@ -104,7 +108,7 @@ python -m racer.sim.main --track oval --drop-box 6.0 1.3 0.6 0.3 --drop-at-lap 3
 python -m racer.sim.main --random --gen-seed 7 --difficulty hard --obstacles known,drop,slalom
 python -m racer.sim.trackgen --gen-seed 7 --difficulty hard --preview   # just make the track and a picture of it
 python tools/bench_random.py --n 30                   # 90 random tracks headless, about 30 s on 24 cores
-python -m pytest tests                                # 61 unit tests
+python -m pytest tests                                # 63 unit tests
 python tools/plot_plan.py oval                        # map, centerline, racing line, speed profile of the last run
 python tools/run_experiments.py && python tools/plot_learning.py   # the plots above, a few minutes
 python tools/make_tracks.py                           # regenerate the five tracks

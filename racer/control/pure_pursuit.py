@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 
-from racer.planning.speed_profile import backward_pass
+from racer.planning.speed_profile import build_speed_profile, curvature
 
 
 def wrap_angle(a):
@@ -32,8 +32,12 @@ class PurePursuit:
         self.ld_min = race["ld_min_m"]
         self.ld_max = race["ld_max_m"]
         self.window = race["search_window"]
+        self.speed_lead_s = race["speed_lead_s"]
+        self.cut_max = race["cut_max_m"]
+        self.ld_floor = race["ld_floor_m"]
+        self.kappa = np.abs(curvature(line, k=3))
         self.ds = cfg["plan"]["ds_m"]
-        self.a_brake = cfg["plan"]["a_brake"]
+        self.cfg = cfg
         self.idx = 0
         self.multiplier = np.ones(self.n)
         self.target = line[0]
@@ -45,10 +49,11 @@ class PurePursuit:
 
     @multiplier.setter
     def multiplier(self, mult):
-        """Learned speed multiplier per point. The target speed is the profile times the multiplier, braked again,
-        so the car slows down in time for a section that learned to be slow instead of arriving at its neighbour's speed."""
+        """Learned speed multiplier per point. Speed goes with the square root of grip, so a section that drives at
+        m times the planned speed has m^2 times the planned grip. The target speeds are rebuilt from that grip, so
+        braking and accelerating know how much grip each corner leaves, and slow sections are braked for in time."""
         self._mult = np.asarray(mult, dtype=float)
-        self.v_target_line = backward_pass(list(self.v_profile * self._mult), self.a_brake, self.ds)
+        self.v_target_line = build_speed_profile(self.line, self.cfg, self.cfg["plan"]["a_lat_max"] * self._mult ** 2)
 
     def relocate(self, pose):
         """Search the whole line for the nearest point; used at the start and after a teleport."""
@@ -61,7 +66,12 @@ class PurePursuit:
         return self.idx
 
     def lookahead_index(self, idx, v):
+        """Long lookahead on straights (steady), shorter in bends: pure pursuit settles about ld^2 * kappa / 2 inside
+        a bend, so ld is cut until that is at most cut_max (regulated lookahead)."""
         ld = float(np.clip(self.ld_k * v, self.ld_min, self.ld_max))
+        bend = self.kappa[(idx + np.arange(int(ld / self.ds) + 1)) % self.n].max()
+        if bend > 0:
+            ld = min(ld, max(np.sqrt(2 * self.cut_max / bend), self.ld_floor))
         return (idx + int(ld / self.ds)) % self.n
 
     def predict(self, pose, v, n):
@@ -96,7 +106,10 @@ class PurePursuit:
         steer = math.atan2(2 * self.L * math.sin(alpha), ld)
         steer = max(-self.max_steer, min(self.max_steer, steer))
 
-        speed = min(self.v_target_line[idx], self.v_target_line[i_target])
+        # ask for the speed the plan wants a moment from now: the speed controller lags behind its target by
+        # about that much, so this makes the car arrive at each point at the planned speed (feedforward)
+        lead = int(v * self.speed_lead_s / self.ds)
+        speed = self.v_target_line[(idx + lead) % self.n]
         self.target = target
         self.v_target = float(speed)
         return self.v_target, steer

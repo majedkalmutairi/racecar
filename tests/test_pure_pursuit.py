@@ -5,9 +5,9 @@ import numpy as np
 from racer.control.pure_pursuit import PurePursuit, lateral_error, wrap_angle
 
 CFG = {
-    "car": {"wheelbase_m": 0.33, "max_steer_rad": 0.4},
-    "race": {"ld_k": 0.4, "ld_min_m": 0.5, "ld_max_m": 2.0, "search_window": 30},
-    "plan": {"ds_m": 0.1, "a_brake": 6.0},
+    "car": {"wheelbase_m": 0.33, "max_steer_rad": 0.4, "max_speed_mps": 8.0},
+    "race": {"ld_k": 0.4, "ld_min_m": 0.5, "ld_max_m": 2.0, "search_window": 30, "speed_lead_s": 0.12, "cut_max_m": 0.06, "ld_floor_m": 0.3},
+    "plan": {"ds_m": 0.1, "a_brake": 5.0, "a_accel": 4.0, "a_lat_max": 6.0, "curv_span_m": 0.6, "kappa_eps": 1e-3},
 }
 STRAIGHT = np.c_[np.arange(0, 20, 0.1), np.zeros(200)]
 
@@ -18,29 +18,35 @@ def test_wrap_angle():
 
 def test_on_the_line_steers_straight():
     pp = PurePursuit(STRAIGHT, np.full(200, 3.0), CFG)
-    speed, steer = pp.step((0.0, 0.0, 0.0), 1.0)
+    _, steer = pp.step((0.0, 0.0, 0.0), 1.0)
     assert abs(steer) < 1e-9
-    assert speed == 3.0
 
 def test_left_of_the_line_steers_right():
     pp = PurePursuit(STRAIGHT, np.full(200, 3.0), CFG)
     _, steer = pp.step((0.0, 0.5, 0.0), 1.0)
     assert steer < 0
 
-def test_multiplier_scales_speed():
-    pp = PurePursuit(STRAIGHT, np.full(200, 3.0), CFG)
-    pp.multiplier = np.full(200, 0.5)
-    speed, _ = pp.step((1.0, 0.0, 0.0), 1.0)
-    assert abs(speed - 1.5) < 1e-9
+def circle(radius, ds=0.1):
+    n = int(round(2 * np.pi * radius / ds))
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    return np.c_[radius * np.cos(t), radius * np.sin(t)]
+
+def test_multiplier_scales_corner_speed():
+    ring = circle(2.0)
+    pp = PurePursuit(ring, np.full(len(ring), 3.0), CFG)
+    pp.multiplier = np.full(len(ring), 0.5)               # half the speed = a quarter of the grip
+    assert np.allclose(pp.v_target_line, 0.5 * math.sqrt(6.0 * 2.0), rtol=0.02)
 
 def test_brakes_in_time_for_a_slow_section():
-    pp = PurePursuit(STRAIGHT, np.full(200, 6.0), CFG)
+    pp = PurePursuit(STRAIGHT, np.full(200, 3.0), CFG)
     mult = np.ones(200)
-    mult[100:] = 0.2                                     # 1.2 m/s from x = 10 m
+    pp.multiplier = mult
+    fast = pp.v_target_line.copy()
+    mult[100:] = 0.0001                                    # a section that learned to all but stop
     pp.multiplier = mult
     v = pp.v_target_line
-    assert v[99] < 6.0 and abs(v[99] - math.sqrt(1.2 ** 2 + 2 * 6.0 * 0.1)) < 1e-9
-    assert np.all(np.diff(v[40:100]) <= 1e-9)             # slowing down before it, not at it
+    assert v[99] < 0.2 and v[50] < fast[50]                # slows well before the slow section
+    assert np.all(np.diff(v[60:100]) <= 1e-9)
 
 def test_relocate_finds_far_point():
     pp = PurePursuit(STRAIGHT, np.full(200, 3.0), CFG)
