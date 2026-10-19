@@ -171,5 +171,6 @@ trackgen:             # random tracks: racer/sim/trackgen.py makes them, racer/s
     hard:   {shape: grid, cell_m: [2.2, 2.6], cells: [0.6, 0.9], jitter: 0.1, radius_m: [1.0, 1.2],
              width_m: [1.2, 1.3], known: [1, 3], drop: [1, 2], slalom: [2, 3], gap_m: 0.85}
 dashboard:
-  panel_w: 300
+  panel_w: 400
+  corner_kappa: 0.3   # a section with a bend tighter than 1 / this (3.3 m radius) counts as a corner
   graph_len: 200

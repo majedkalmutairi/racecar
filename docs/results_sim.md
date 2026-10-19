@@ -20,9 +20,9 @@ after every lap.
 
 | track   | first race lap [s] | best lap [s] | laps to within 5 % of best | mean multiplier at lap 15 | lap 15 vs first race lap |
 |---------|-------------------:|-------------:|---------------------------:|--------------------------:|-------------------------:|
-| oval    | 7.95 | 4.15 | 7 | 1.88 | 47 % faster |
-| hairpin | 8.51 | 4.63 | 7 | 1.83 | 45 % faster |
-| chicane | 9.72 | 5.06 | 7 | 1.47 | 47 % faster |
+| oval    | 7.95 | 4.16 | 7 | 1.38 | 47 % faster |
+| hairpin | 8.51 | 4.44 | 7 | 1.79 | 47 % faster |
+| chicane | 9.71 | 4.69 | 8 | 1.57 | 51 % faster |
 
 Before 2026-10-19 the same tracks ended at 6.17, 6.69 and 6.92 s (a 1.1 multiplier cap, a 3 m/s² plan, and a
 reflex that braked for walls the plan never went near). The oval's long sides learn up to 2.5x and are then limited
@@ -36,10 +36,10 @@ by the car's 8 m/s top speed; its ends, like the tight parts of the other tracks
 
 The chicane PNG replaces the oval under the car while it is racing. Nothing is told to the car.
 
-- last oval race lap 4.28 s, swap, map mismatch jumps from 0.00 to about 0.9
+- last oval race lap 4.15 s, swap, map mismatch jumps from 0.00 to about 0.9
 - the car slows to explore speed while the mismatch is above 0.35 and resets 2.0 s after the swap
   (`RACE -> TRACK_CHANGED -> EXPLORE`), deleting map, plan and multipliers
-- explore lap on the chicane 28.3 s, first chicane race lap 8.65 s, best chicane lap after 7 race laps 4.7 s
+- explore lap on the chicane 28.3 s, first chicane race lap 8.63 s, best chicane lap after 7 race laps 4.65 s
 - the swap waits until the car is 0.3 m clear of the new track's walls (`sim.swap_margin_m`; it was 0.4, which the
   minimum-curvature line on the oval never offered, so the swap silently never happened)
 
@@ -126,6 +126,23 @@ After all of them every track drives within 0 to 5 % of the plan with the true g
 grip learned is about 8 m/s². A smaller wall clearance (0.25 to 0.30 m) bought about 3 % on plain tracks but cost
 time next to boxes, and the real car's pose will be a few centimetres off, so it stays 0.35 m.
 
+## Tuning round (2026-10-20)
+
+With the car driving its plan closely, the remaining questions were which numbers to trust. Each change was run on
+the six tracks for 30 laps against the previous version (best lap, s); the full set of tried variants is in the commit
+message.
+
+| change | gen_hard_large_3 | oval | hairpin | chicane | snake | twisty |
+|---|---|---|---|---|---|---|
+| start of the round | 6.68 | 4.15 | 4.63 | 4.78 | 7.52 | 6.67 |
+| plan uses the car's real acceleration and braking (6 / 6 m/s²) and 60 learning sections | 6.38 | 4.15 | 4.48 | 4.73 | 7.27 | 6.60 |
+| probe past a ceiling after 2 clean laps by 6 %, allow 10 cm of corner cutting | **6.20** | **4.12** | **4.45** | **4.48** | **7.02** | **6.45** |
+
+Every track now drives within 0 to 1.4 % of what its line allows at the true grip. Tried and dropped: bigger learning
+steps (overshoot), other length weights for the line (one track better, another worse), 3 cm and 15 cm corner cutting,
+and a line weighted toward minimum time (planned up to 2 % faster, drove no faster). The closest the car body came to
+any wall or box over 20 laps on the tightest tracks was 21 cm.
+
 ## Reverse recovery
 
 The car can now reverse (at most 0.5 m/s). When it wants to drive but has not moved for 1 s, it backs up 0.5 m
@@ -152,9 +169,9 @@ boxes) and drives each for 10 laps headless, in parallel, each run in its own lo
 
 | difficulty | runs OK | lap | explore lap | first race lap (mean) | best lap (mean) | best vs first | back-ups |
 |---|---|---|---|---|---|---|---|
-| easy   | 30 / 30 | 12.6 - 16.7 m | 16 - 25 s | 6.8 s | 3.9 s | 43 % faster | 5 |
-| medium | 30 / 30 | 12.2 - 18.2 m | 18 - 30 s | 6.9 s | 3.9 s | 44 % faster | 4 |
-| hard   | 30 / 30 | 16.8 - 22.1 m | 28 - 41 s | 9.4 s | 5.3 s | 44 % faster | 5 |
+| easy   | 30 / 30 | 12.6 - 16.7 m | 16 - 25 s | 6.8 s | 3.7 s | 45 % faster | 5 |
+| medium | 30 / 30 | 12.2 - 18.2 m | 18 - 30 s | 6.9 s | 3.7 s | 46 % faster | 4 |
+| hard   | 30 / 30 | 16.8 - 22.1 m | 28 - 41 s | 9.4 s | 4.9 s | 47 % faster | 4 |
 
 No crash, no false track change, and the best lap beats the first race lap on all 90. On 300 tracks of the large
 size (10 x 10 m, seeds 100 to 199): 299 of 300 OK, no crash, one stuck for good. The same 300 with recovery

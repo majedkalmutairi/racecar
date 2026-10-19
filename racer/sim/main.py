@@ -9,7 +9,7 @@ import yaml
 
 from racer.dashboard.overlay import Dashboard
 from racer.modes.manager import Mode, ModeManager
-from racer.sim.draw import MapOverlay, draw_plan
+from racer.sim.draw import COLOUR_MODES, MapOverlay, TrackView, Trail, draw_plan
 from racer.sim.geometry import car_corners
 from racer.sim.gif import GifRecorder
 from racer.sim.sim_car import SimCar
@@ -125,17 +125,21 @@ def main():
         w, h = car.size_px
         screen = pygame.display.set_mode((w + cfg["dashboard"]["panel_w"], h))
         clock = pygame.time.Clock()
-        dash = Dashboard(cfg, pygame.font.SysFont(None, 22), pygame.font.SysFont(None, 40))
+        fonts = [pygame.font.SysFont("segoeui,arial", size) for size in (14, 17, 26, 40)]
+        dash = Dashboard(cfg, fonts)
         map_overlay = MapOverlay(car.track, cfg["mapping"]["min_hits"])
+        track_view = TrackView(car.track)
+        trail = Trail()
+        view = {"colour": "speed", "beams": cfg["lidar"]["draw_beams"], "debug": True}
         gif = GifRecorder(args.gif, args.gif_s, args.gif_from_lap) if args.gif else None
 
     pending_track = None
     if headless:
-        screen = map_overlay = None
+        screen = map_overlay = track_view = None
 
     def swap_track_when_free():
         """Replace the track on the first frame the car has room around it on the new one."""
-        nonlocal pending_track, map_overlay, screen
+        nonlocal pending_track, map_overlay, screen, track_view
         if pending_track is None:
             return
         x, y, yaw = car.get_pose()
@@ -153,6 +157,7 @@ def main():
             if screen.get_size() != (w + cfg["dashboard"]["panel_w"], h):
                 screen = pygame.display.set_mode((w + cfg["dashboard"]["panel_w"], h))
             map_overlay = MapOverlay(car.track, cfg["mapping"]["min_hits"])
+            track_view = TrackView(car.track)
         print(f"[sim] track swapped to {car.track.name}")
         pending_track = None
 
@@ -180,6 +185,12 @@ def main():
                         pending_track = Track(names[(names.index(car.track.name) + 1) % len(names)], cfg["sim"]["px_per_m"])
                     elif event.key == pygame.K_a:
                         manual = not manual
+                    elif event.key == pygame.K_c:
+                        view["colour"] = COLOUR_MODES[(COLOUR_MODES.index(view["colour"]) + 1) % len(COLOUR_MODES)]
+                    elif event.key == pygame.K_l:
+                        view["beams"] = not view["beams"]
+                    elif event.key == pygame.K_d:
+                        view["debug"] = not view["debug"]
             pygame.display.set_caption(f"racer - {car.track.name}")
 
         if not paused:
@@ -214,11 +225,19 @@ def main():
             state = manager.status(sim_t)
             state["speed"] = car.get_speed()
             state["paused"] = paused
-            car.draw(screen)
+            state["crashes"] = car.crashes
+            state["sim_speed"] = sim_t / max(time.perf_counter() - real_start, 1e-6)
+            x, y, _ = car.get_pose()
+            trail.add(car.track, x, y)
+            track_view.draw(screen)
             map_overlay.draw(screen, manager.grid, sim_t, manager.mode is Mode.EXPLORE)
-            draw_plan(screen, car.track, state)
+            trail.draw(screen)
+            draw_plan(screen, car.track, state, view, fonts[0])
+            car.draw(screen, view["beams"])
+            if state["safety_active"]:
+                pygame.draw.circle(screen, (255, 90, 90), car.track.world_to_px(x, y), 28, 2)
             dash.push(car.get_speed(), state["v_target"])
-            dash.draw(screen, state)
+            dash.draw(screen, state, view)
             if gif:
                 gif.capture(screen, sim_t, manager.lap_total)
             pygame.display.flip()

@@ -49,6 +49,11 @@ class ModeManager:
         self.cmd = (0.0, 0.0)
         self.sent = (0.0, 0.0)
         self.settle_until = 0.0
+        self.lap_history = []      # (lap number, seconds, mode) for the dashboard
+        self.counts = {}           # events per kind, for the dashboard
+        self.replans = 0
+        self.ahead = None
+        self.track_err = 0.0
         self.last_pose = self.last_t = self.last_v = None
         self.slipping = False
         self.mode = None
@@ -96,7 +101,8 @@ class ModeManager:
         if self.recovery.reversing:  # the reflex only looks forward
             out, active = cmd, False
         else:
-            out, active = self.safety.apply(cmd, scan, v, t_now, pose, self._line_ahead(pose, v))
+            self.ahead = self._line_ahead(pose, v)
+            out, active = self.safety.apply(cmd, scan, v, t_now, pose, self.ahead)
         if active and not self.safety_active:
             self._log_event(t_now, out[1])
         self.safety_active = active
@@ -115,6 +121,7 @@ class ModeManager:
         if self.racer is not None:
             err = lateral_error(pose, self.line, self.racer.idx)
             trouble = active or self.recovery.reversing or self.slipping
+            self.track_err = err
             if t_now < self.settle_until:
                 err = 0.0                   # still getting onto a new line: being off it is not the section's fault
             self.learner.observe(self.racer.idx, err, trouble, car.crashed)
@@ -201,6 +208,7 @@ class ModeManager:
         plan = self.cfg["plan"]
         if self.new_cells >= plan["replan_cells"] and t_now - self.last_replan_t >= plan["replan_cooldown_s"]:
             print(f"[plan] {self.new_cells} new wall cells away from the known walls: replanning around them")
+            self.replans += 1
             self._build_plan(self.center, pose, t_now)
             self.last_replan_t = t_now
 
@@ -231,6 +239,7 @@ class ModeManager:
 
     def _lap_done(self, lap_time):
         self.lap_total += 1
+        self.lap_history.append((self.lap_total, lap_time, self.mode.value))
         self.lap_log.writerow({"track": self.track_name, "lap_number": self.lap_total,
                                "lap_time_s": round(lap_time, 2), "crashes": self.lap_crashes,
                                "mode": self.mode.value})
@@ -248,6 +257,7 @@ class ModeManager:
     def note(self, kind, t_now, steer=0.0, min_ttc=float("nan")):
         """One row in events.csv: reflex, recover, stuck, crash, drop or swap."""
         section = int(self.learner.section_of[self.racer.idx]) if self.racer is not None else -1
+        self.counts[kind] = self.counts.get(kind, 0) + 1
         row = {"t": round(t_now, 2), "lap": self.lap_total + 1, "section": section, "mode": self.mode.value,
                "min_ttc": round(min_ttc, 2), "steer": round(steer, 2), "kind": kind}
         self.event_log.writerow(row)
@@ -284,7 +294,31 @@ class ModeManager:
             "last_event": self.last_event,
             "recovery": self.recovery.status(),
             "confidence": float(self.learner.confidence().mean()) if self.learner is not None else None,
+            # for the bigger dashboard and its debug section
+            "lap_history": list(self.lap_history),
+            "counts": dict(self.counts),
+            "replans": self.replans,
+            "ahead": self.ahead,
+            "track_err": self.track_err,
+            "slipping": self.slipping,
+            "lookahead_m": self.racer.ld if self.racer is not None else None,
+            "v_line": self.racer.v_target_line if self.racer is not None else None,
+            "plan_lap_s": float(np.sum(self.cfg["plan"]["ds_m"] / self.racer.v_target_line)) if self.racer is not None else None,
+            "section": int(self.learner.section_of[self.racer.idx]) if self.racer is not None else None,
+            "grip": self.cfg["plan"]["a_lat_max"] * self.learner.mult ** 2 if self.learner is not None else None,
+            "ceiling_grip": self.cfg["plan"]["a_lat_max"] * self.learner.ceiling ** 2 if self.learner is not None else None,
+            "trouble_grip": self.cfg["plan"]["a_lat_max"] * self.learner.trouble ** 2 if self.learner is not None else None,
+            "section_conf": self.learner.confidence() if self.learner is not None else None,
+            "mult": self.learner.mult if self.learner is not None else None,
+            "section_of": self.learner.section_of if self.learner is not None else None,
+            "section_corner": self.section_corners() if self.racer is not None else None,
         }
+
+    def section_corners(self):
+        """True for sections with a real corner in them: only there does driving faster test the grip."""
+        bend = np.zeros(self.learner.n_sections)
+        np.maximum.at(bend, self.learner.section_of, self.racer.kappa)
+        return bend > self.cfg["dashboard"]["corner_kappa"]
 
     def close(self):
         self.lap_file.close()

@@ -33,6 +33,7 @@ class SectionLearner:
                 self.mult = saved
         self.streak = np.zeros(self.n_sections, dtype=int)
         self.ceiling = np.full(self.n_sections, np.inf)
+        self.trouble = np.full(self.n_sections, np.inf)   # multiplier of the last real problem (probing never moves it)
         self._new_lap()
 
     def remap(self, n_points):
@@ -59,7 +60,7 @@ class SectionLearner:
         bad = ~clean & self.visited
 
         # bad: remember where it went wrong, back off (harder after a crash), confidence back to zero
-        self.ceiling[bad] = self.mult[bad]
+        self.ceiling[bad] = self.trouble[bad] = self.mult[bad]
         self.mult[bad] *= 1 - np.where(self.crashed[bad], self.down_crash, self.down)
         self.streak[bad] = 0
 
@@ -86,7 +87,7 @@ class SectionLearner:
         self.problem[(s - 1) % self.n_sections] = True
         self.problem[s] = self.crashed[s] = True
         bad = self.problem
-        self.ceiling[bad] = self.mult[bad]
+        self.ceiling[bad] = self.trouble[bad] = self.mult[bad]
         self.mult[bad] *= 1 - np.where(self.crashed[bad], self.down_crash, self.down)
         self.streak[bad] = 0
         self.mult = np.clip(self.mult, self.min_mult, self.max_mult)

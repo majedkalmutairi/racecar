@@ -29,6 +29,7 @@ class Track:
 
         self.surface = image
         self._converted = False
+        self.wall_version = 0          # bumped whenever a box changes the walls, so views know to repaint
 
     def world_to_px(self, x_m, y_m):
         col = int(x_m * self.px_per_m)
@@ -53,6 +54,7 @@ class Track:
         if left >= right or top >= bottom:
             return
         self.wall[top:bottom, left:right] = True
+        self.wall_version += 1
         pygame.draw.rect(self.surface, (0, 0, 0), (left, top, right - left, bottom - top))
 
     def draw(self, screen):

@@ -4,6 +4,7 @@ from racer.sim.lidar import Lidar
 from racer.sim.track import Track
 
 CRASH_COLOUR = (255, 220, 0)
+SLIDE_COLOUR = (255, 150, 40)
 
 
 class SimCar(CarInterface):
@@ -80,12 +81,14 @@ class SimCar(CarInterface):
         self._scan = self.lidar.scan(self.track, *self.car.pose())
         return was_reset
 
-    def draw(self, screen):
+    def draw(self, screen, beams=True):
+        """Lidar beams and the car on top of the track: yellow flashing after a crash, orange while sliding."""
         x, y, yaw = self.car.pose()
-        self.track.draw(screen)
-        if self.draw_beams:
+        if beams:
             self.lidar.draw(screen, self.track, x, y, yaw, self._scan)
         if self.crashed and int(self.crash_timer * 8) % 2 == 0:
             self.car.draw(screen, self.track, CRASH_COLOUR)
+        elif self.car.sliding:
+            self.car.draw(screen, self.track, SLIDE_COLOUR)
         else:
             self.car.draw(screen, self.track)

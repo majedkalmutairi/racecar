@@ -39,6 +39,7 @@ class PurePursuit:
         self.ds = cfg["plan"]["ds_m"]
         self.cfg = cfg
         self.idx = 0
+        self.ld = self.ld_min
         self.multiplier = np.ones(self.n)
         self.target = line[0]
         self.v_target = 0.0
@@ -72,6 +73,7 @@ class PurePursuit:
         bend = self.kappa[(idx + np.arange(int(ld / self.ds) + 1)) % self.n].max()
         if bend > 0:
             ld = min(ld, max(np.sqrt(2 * self.cut_max / bend), self.ld_floor))
+        self.ld = ld
         return (idx + int(ld / self.ds)) % self.n
 
     def predict(self, pose, v, n):
@@ -79,6 +81,7 @@ class PurePursuit:
         the same steering law run forward on the bicycle model. Includes the corner cutting the real car does."""
         x, y, yaw = pose
         idx = self.idx
+        ld_now = self.ld                     # lookahead_index records the lookahead; keep the real one
         path = np.empty((n, 2))
         for i in range(n):
             near = (idx + np.arange(-2, 10)) % self.n
@@ -91,6 +94,7 @@ class PurePursuit:
             y += self.ds * math.sin(yaw)
             yaw += self.ds / self.L * math.tan(steer)
             path[i] = x, y
+        self.ld = ld_now
         return path
 
     def step(self, pose, v):

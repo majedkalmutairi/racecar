@@ -60,8 +60,8 @@ code will run on the car with a `RosCar` behind the interface.
 | track   | explore lap | first race lap | lap 15 |
 |---------|------------:|---------------:|-------:|
 | oval    | 26 s | 8.0 s | 4.2 s |
-| hairpin | 29 s | 8.5 s | 4.7 s |
-| chicane | 28 s | 9.7 s | 5.1 s |
+| hairpin | 29 s | 8.5 s | 4.5 s |
+| chicane | 28 s | 9.7 s | 4.8 s |
 
 ![oval learning curve](docs/plots/laptime_vs_lap_oval.png)
 
@@ -71,6 +71,29 @@ learns the new track.
 ![track change](docs/plots/track_change.png)
 
 More numbers, the multiplier plots and the obstacle runs: [docs/results_sim.md](docs/results_sim.md).
+
+## Reading the dashboard
+
+The window is the track on the left and a panel on the right. Everything in the panel is read from the car's state;
+nothing there feeds back into how it drives.
+
+- **Track**: the racing line is coloured by planned speed (blue slow, red fast; press C for the grip each section
+  trusts, or its confidence). The thin blue line is the centerline, the white line is where the car really drove
+  over the last lap, the cyan line ahead of the car is the path the safety reflex is checking, and the yellow dot is
+  where pure pursuit is aiming. Red dots are mapped walls (bright while exploring). The car turns orange while its
+  tyres slide and gets a red ring while the reflex brakes.
+- **Lap times**: this lap, last, best, and "what it thinks it can do now", the lap time its current plan and learned
+  grip add up to. The bars are every race lap (green = best, white = the last one).
+- **Speed**: actual speed against what the controller asks for, on a 0 to top-speed bar, with a short history.
+- **What it has learned**: one bar per section of the line. Height is the grip that section trusts (m/s²), colour is
+  how sure it is (clean laps in a row), a white tick is where it last had trouble, and small boxes are straights,
+  where speed never tests the grip. "Trouble at ... g" is the measured limit: the median grip at which corners last
+  slid, left the line or made the reflex brake.
+- **Safety**: whether the reflex is braking, time until something on the checked path would be hit, and counts of
+  reflex events, back-ups and crashes.
+- **Debug** (D): tracking error, lookahead distance, whether the reflex is checking the planned path or the steering
+  arc, map mismatch (the track-change detector), the current section's multiplier and ceiling, replans, dropped boxes
+  and track swaps, and how much faster than real time the sim runs.
 
 ## Random tracks
 
@@ -84,7 +107,7 @@ nine tenths of candidates pass, and the generator just tries the next one.
 ![random tracks](docs/plots/bench_gallery.png)
 
 90 random tracks (30 per difficulty, 10 laps each, all three kinds of boxes) all finish without a crash, and on
-every one the best lap beats the first race lap by 43 to 44 %. 300 larger tracks: 299 of 300, no crash. With
+every one the best lap beats the first race lap by 45 to 47 %. 300 larger tracks: 299 of 300, no crash. With
 reverse recovery switched off, 53 of those 300 runs end with the car parked against a box or a wall (30 % of the
 hard ones).
 
@@ -94,13 +117,13 @@ hard ones).
 
 Five hand-made tracks in `tools/make_tracks.py`, all 1.2 to 1.4 m wide: `oval`, `hairpin` (one 1 m radius turn),
 `chicane` (two S-bends), `twisty` (a deep pocket and a diagonal, nine corners) and `snake` (four columns joined by
-three hairpins). Corners are rounded to a 1 m radius, which is about the tightest this car turns cleanly. On `twisty` the car goes from a 45 s explore lap to 6.7 s,
-on `snake` from 50 s to 7.5 s.
+three hairpins). Corners are rounded to a 1 m radius, which is about the tightest this car turns cleanly. On `twisty` the car goes from a 45 s explore lap to 6.45 s,
+on `snake` from 50 s to 7.0 s.
 
 ## Running it
 
 ```
-python -m racer.sim.main --track oval                 # window with the dashboard; R reset, SPACE pause, N next track, A manual
+python -m racer.sim.main --track oval                 # window with the dashboard; keys are listed at its bottom
 python -m racer.sim.main --track hairpin --headless --laps 15      # no window, as fast as the CPU goes
 python -m racer.sim.main --track oval --swap-track chicane --swap-at-lap 4 --laps 10
 python -m racer.sim.main --track oval --obstacles --laps 6         # boxes from config.yaml are there from the start

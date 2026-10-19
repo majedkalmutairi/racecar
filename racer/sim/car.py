@@ -63,6 +63,7 @@ class Car:
     def draw(self, screen, track, colour=BODY_COLOUR):
         points = [track.world_to_px(cx, cy) for cx, cy in self.corners()]
         pygame.draw.polygon(screen, colour, points)
+        pygame.draw.polygon(screen, (20, 20, 20), points, 1)
 
         centre = self.L / 2
         nose = centre + self.length / 2

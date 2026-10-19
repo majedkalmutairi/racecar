@@ -5,7 +5,7 @@ import pygame
 
 from racer.interface import beam_angles
 
-BEAM_COLOUR = (0, 140, 220)
+BEAM_COLOUR = (0, 140, 220, 70)
 CHUNK = 100  # samples per march step (2 m at 2 cm)
 
 
@@ -47,8 +47,13 @@ class Lidar:
         return np.clip(ranges, 0.0, self.max_range)
 
     def draw(self, screen, track, x, y, yaw, ranges):
+        """Beams as faint lines, drawn on a see-through layer so the track stays readable."""
+        if getattr(self, "_layer", None) is None or self._layer.get_size() != screen.get_size():
+            self._layer = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        self._layer.fill((0, 0, 0, 0))
         start = track.world_to_px(x, y)
         for a, r in zip(self.angles, ranges):
             theta = yaw + a
             end = track.world_to_px(x + r * math.cos(theta), y + r * math.sin(theta))
-            pygame.draw.line(screen, BEAM_COLOUR, start, end)
+            pygame.draw.line(self._layer, BEAM_COLOUR, start, end)
+        screen.blit(self._layer, (0, 0))
