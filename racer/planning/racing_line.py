@@ -45,13 +45,30 @@ def sideways_room(ref, nrm, dist, grid, clear, reach=1.0):
     return lo, hi
 
 
+def solve_offsets(ref, nrm, lo, hi, length_w):
+    """One bounded least-squares solve: sideways offsets d that make ref + d * nrm bend least, plus a little length,
+    with lo <= d <= hi."""
+    n = len(ref)
+    bend = diags([1, -2, 1], [-1, 0, 1], shape=(n, n)).tolil()
+    bend[0, n - 1] = bend[n - 1, 0] = 1                             # closed loop
+    bend = bend.tocsr()
+    step = diags([-1, 1], [0, 1], shape=(n, n)).tolil()
+    step[n - 1, 0] = 1
+    step = step.tocsr() * length_w
+    nx, ny = diags(nrm[:, 0]), diags(nrm[:, 1])
+    a = vstack([bend @ nx, bend @ ny, step @ nx, step @ ny]).tocsr()
+    b = -np.concatenate([bend @ ref[:, 0], bend @ ref[:, 1], step @ ref[:, 0], step @ ref[:, 1]])
+    return lsq_linear(a, b, bounds=(lo, np.maximum(hi, lo + 1e-9))).x
+
+
 def min_curvature_line(center, grid, cfg):
     """Racing line that bends as little as possible inside the room the map leaves (Heilmeier et al., TUM).
 
     The line is the centerline moved sideways by d at every point. Its bending is the second difference of the
     points, which is linear in d, so the whole lap is one bounded least-squares problem. A small weight on the
     first difference also keeps it short. Solved again around its own result a few times, because moving the
-    points changes their spacing.
+    points changes their spacing. (Weighting the bending by how slow the car is there planned up to 2 % faster
+    on twisty tracks but drove no faster, so it was left out.)
     """
     plan, mapping = cfg["plan"], cfg["mapping"]
     dist = distance_field(grid.occupied(mapping["min_hits"]), grid.res)
@@ -59,22 +76,13 @@ def min_curvature_line(center, grid, cfg):
     for _ in range(plan["mincurv_iters"]):
         ref = resample(line, plan["mincurv_step_m"])
         nrm = normals(ref)
-        n = len(ref)
         lo, hi = sideways_room(ref, nrm, dist, grid, plan["wall_clear_m"] + plan["mincurv_buffer_m"])
-        bend = diags([1, -2, 1], [-1, 0, 1], shape=(n, n)).tolil()
-        bend[0, n - 1] = bend[n - 1, 0] = 1                         # closed loop
-        step = diags([-1, 1], [0, 1], shape=(n, n)).tolil()
-        step[n - 1, 0] = 1
-        bend, step = bend.tocsr(), step.tocsr() * plan["mincurv_length_w"]
-        nx, ny = diags(nrm[:, 0]), diags(nrm[:, 1])
-        a = vstack([bend @ nx, bend @ ny, step @ nx, step @ ny]).tocsr()
-        b = -np.concatenate([bend @ ref[:, 0], bend @ ref[:, 1], step @ ref[:, 0], step @ ref[:, 1]])
-        d = lsq_linear(a, b, bounds=(lo, np.maximum(hi, lo + 1e-9))).x
-        line = ref + nrm * d[:, None]
+        line = ref + nrm * solve_offsets(ref, nrm, lo, hi, plan["mincurv_length_w"])[:, None]
     return resample(line, plan["ds_m"])
 
 
 def build_racing_line(center, width, cfg, grid=None):
+    """Without a map: the smoothed line. With one: the minimum-curvature line."""
     if grid is None:
         return smoothed_line(center, width, cfg)
     return min_curvature_line(center, grid, cfg)

@@ -61,8 +61,8 @@ plan:
   mincurv_length_w: 0.1 # weight on length against bending (0 = pure minimum curvature)
   mincurv_buffer_m: 0.05  # extra room kept, because the line cuts a little closer between solver points
   a_lat_max: 6.0      # corner grip the plan assumes, m/s^2: v = sqrt(a_lat_max * R); learning finds the rest
-  a_brake: 5.0
-  a_accel: 4.0
+  a_brake: 6.0
+  a_accel: 6.0
   kappa_eps: 1.0e-3   # straight = curvature below this
   curv_span_m: 0.6    # the speed profile reads curvature over this length of line
   replan_cells: 5     # this many new wall cells away from the known walls while racing = new obstacle, replan
@@ -73,21 +73,21 @@ race:
   ld_max_m: 2.0
   search_window: 30   # nearest-point search looks this many points ahead of the last match
   speed_lead_s: 0.12  # command the planned speed this far ahead in time (the speed controller's lag, ~1/speed_kp)
-  cut_max_m: 0.06     # in bends the lookahead shrinks so pure pursuit cuts the corner by at most this...
+  cut_max_m: 0.10     # in bends the lookahead shrinks so pure pursuit cuts the corner by at most this...
   ld_floor_m: 0.3     # ...but never below this
   trust_err_m: 0.2    # the reflex trusts the plan while the car is this close to the line...
   trust_heading_rad: 0.4  # ...and pointing along it
   trust_horizon_m: 1.0    # line checked this far beyond the stopping distance
 learning:
-  n_sections: 20
+  n_sections: 60
   start_mult: 0.6     # first race lap runs at 60 % of the speed profile
   up: 0.05            # clean section: multiplier * (1 + up * clean laps in a row)...
   up_max: 0.15        # ...but never more than this in one lap
   down: 0.10          # problem section: multiplier * (1 - down), and its old value becomes a ceiling
   down_crash: 0.25    # ...a crash backs off harder
   below_ceiling: 0.98 # a section climbs back to this fraction of its ceiling...
-  probe_laps: 3       # ...and after this many clean laps in a row
-  probe: 0.04         # the ceiling is raised this much to try again
+  probe_laps: 2       # ...and after this many clean laps in a row
+  probe: 0.06         # the ceiling is raised this much to try again
   min_mult: 0.2
   max_mult: 2.5       # no real cap: grip and tracking error decide
   err_ok_m: 0.12      # lateral error above this marks the section as a problem...
