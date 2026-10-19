@@ -2,60 +2,59 @@
 
 A 1/10 scale RC car that learns to race by itself.
 
-Put it on a track it has never seen. It drives one slow lap to map the track, then goes faster every lap after that. If I move the walls around it notices and starts over from the slow lap.
+Put it on a track it has never seen. It drives one slow lap to map the track, then goes faster every lap after that.
+If I move the walls around, it notices and starts over from the slow lap.
 
-Only sensor is a 2D lidar. All the compute is on the car (Jetson Orin Nano).
+The only sensor is a 2D lidar, and all the compute is on the car (Jetson Orin Nano).
 
-Plan:
-
-- write a small 2D simulator first and get everything working there
-- then run the same code on the real car
-
-Status: the simulator part is done (below). Ordering parts for the car, see [shopping-list.md](shopping-list.md).
+The plan is to write a small 2D simulator first, get everything working there, and then run the same code on the
+real car. The simulator part is done (below). I'm ordering the parts for the car now; see
+[shopping-list.md](shopping-list.md).
 
 ![dashboard](docs/sim_dashboard.gif)
 
 ## How it drives
 
 Every frame the mode manager reads the lidar, the pose and the speed through one small interface
-(`CarInterface`: `get_scan`, `get_pose`, `get_speed`, `set_drive`) and decides what to do:
+(`CarInterface`: `get_scan`, `get_pose`, `get_speed`, `set_drive`) and decides what to do.
 
-1. **EXPLORE**: 0.8 m/s, stay centred between the walls, count every lidar hit into an occupancy grid.
-2. **PLAN** (once, when the car is back at its start): slide the explore path onto the ridge of the distance
-   transform to get the centerline, then solve for the minimum-curvature racing line that keeps 0.35 m from every
-   wall and box (one bounded least-squares problem), and compute a speed profile from grip (`v = sqrt(grip * R)`)
-   where braking and accelerating only get the grip a corner leaves (friction ellipse).
-3. **RACE**: pure pursuit on the racing line, with a lookahead that shrinks in bends so the car cuts corners by at
-   most 6 cm, and the planned speed commanded a moment ahead to make up for the speed controller's lag. The line is
-   cut into 20 sections and each section has a speed multiplier (it stands for the section's grip, rebuilt into the
-   speed profile every lap) that starts at 0.6 and a confidence: its clean laps in a row. A clean lap pushes the section up by
-   5 % times its confidence (up to 15 % a lap); a problem (the car slid, left the line by more than 0.12 m, the
-   reflex had to brake, or it crashed) backs it off 10 % (25 % for a crash), resets the confidence and remembers
-   that speed as a ceiling to stay just under, and to try again past after three clean laps. Slides are spotted by
-   comparing the turn rate the pose shows with what the steering asked for, which works with an IMU too.
-4. **Safety reflex**, in every mode, after the controller. On the plan: run pure pursuit forward on the bicycle
-   model to see where the car will really go, and if a lidar hit lies on that path within 0.6 s, slow down to keep
-   it 0.6 s away. Off the plan: predict the shape the body sweeps along the current steering arc and do the same,
-   and if that path is blocked head for the widest gap instead. This is the part that becomes a C++ node on the
-   real car.
-5. **TRACK_CHANGED**: while racing, if more than 35 % of the beams land where the map has no wall for 2 s, throw
-   away the map, the plan and the multipliers and explore again from wherever the car is.
-6. **Reverse recovery**, in every mode: if the car wants to drive but has not moved for 1 s (the reflex has parked
-   it nose-in against something), back up 0.5 m with the wheels turned away from the way out, then try again.
-   The lidar cannot see straight behind, so the back-up is checked against the map built so far. Three tries at
-   the same spot, then it stops and reports STUCK instead of sitting there forever.
+1. EXPLORE: drive at 0.8 m/s, stay centred between the walls, and count every lidar hit into an occupancy grid.
+2. PLAN, once the car is back at its start: slide the explore path onto the ridge of the distance transform to get
+   the centerline. Then solve for the racing line that bends least while keeping 0.35 m from every wall and box
+   (one bounded least-squares problem), and build a speed profile from grip with `v = sqrt(grip * R)`. Braking and
+   accelerating only get the grip a corner leaves over (friction ellipse).
+3. RACE: pure pursuit on the racing line. The lookahead shrinks in bends so the car cuts a corner by at most 10 cm,
+   and the planned speed is commanded a moment early to make up for the speed controller's lag. The line is cut into
+   60 sections. Each one has a speed multiplier, which stands for the grip that section trusts and is rebuilt into
+   the speed profile every lap, plus a confidence: its clean laps in a row. Multipliers start at 0.6. A clean lap
+   raises a section by 5 % times its confidence, at most 15 % a lap. A problem (the car slid, left the line by more
+   than 0.12 m, the reflex had to brake, or it crashed) lowers it by 10 %, or 25 % for a crash, resets the
+   confidence and records that speed as a ceiling. The section then stays just under the ceiling and tries 6 % past
+   it after two clean laps. A slide shows up when the turn rate in the pose is lower than the steering asked for,
+   which an IMU can measure on the real car too.
+4. Safety reflex, in every mode, after the controller. While the car follows its plan, the reflex runs pure pursuit
+   forward on the bicycle model to see where the car will really go. If a lidar hit lies on that path less than
+   0.6 s away, it slows down to keep it 0.6 s away. Off the plan it predicts the shape the body sweeps along the
+   current steering arc instead, and if that path is blocked it heads for the widest gap. This is the part that
+   becomes a C++ node on the real car.
+5. TRACK_CHANGED: while racing, if more than 35 % of the beams land where the map has no wall for 2 s, the car throws
+   away the map, the plan and the multipliers and explores again from wherever it is.
+6. Reverse recovery, in every mode: if the car wants to drive but has not moved for 1 s (usually because the reflex
+   parked it nose-in against something), it backs up 0.5 m with the wheels turned away from the way out and tries
+   again. The lidar cannot see straight behind, so each back-up is checked against the map built so far. After
+   three tries at the same spot it stops and reports STUCK.
 
-A box that is on the track during the explore lap is just more wall: it ends up in the map and the plan goes
-around it. A box dropped after planning is caught by the reflex, mapped while racing, and the plan is rebuilt
-around it a few frames later.
+A box that is on the track during the explore lap is just more wall: it ends up in the map and the plan goes around
+it. A box dropped after planning is caught by the reflex, mapped while racing, and the plan is rebuilt around it a few
+frames later.
 
-Nothing in `racer/mapping`, `planning`, `control`, `learning`, `safety` or `modes` imports pygame, so the same
-code will run on the car with a `RosCar` behind the interface.
+Nothing in `racer/mapping`, `planning`, `control`, `learning`, `safety` or `modes` imports pygame, so the same code will
+run on the car with a `RosCar` behind the interface.
 
 ## Results (simulation)
 
-15 laps, three lidar-noise seeds per track. Lap 1 is the explore lap. No run crashed. The sim car has a grip limit
-(about 0.8 g), so the speed it learns is the speed the tyres allow.
+15 laps, three lidar-noise seeds per track, and lap 1 is the explore lap. No run crashed. The sim car has a grip limit
+of about 0.8 g, so the speed it learns is the speed its tyres allow.
 
 | track   | explore lap | first race lap | lap 15 |
 |---------|------------:|---------------:|-------:|
@@ -65,60 +64,66 @@ code will run on the car with a `RosCar` behind the interface.
 
 ![oval learning curve](docs/plots/laptime_vs_lap_oval.png)
 
-Swapping the oval for the chicane under the car at lap 8: the mismatch is noticed in 2 s, the car re-explores and
-learns the new track.
+Every track ends within 0 to 1.4 % of the fastest lap its racing line allows at that grip. One long run on a random
+hard track went 473 laps without a crash: 12.4 s on the first race lap, 6.6 s by lap 8, then between 6.2 and 6.4 s
+for the remaining 460 or so laps.
+
+When the oval is swapped for the chicane under the car at lap 8, it notices the mismatch within 2 s, explores again
+and learns the new track.
 
 ![track change](docs/plots/track_change.png)
 
-More numbers, the multiplier plots and the obstacle runs: [docs/results_sim.md](docs/results_sim.md).
+More numbers, the multiplier plots and the obstacle runs are in [docs/results_sim.md](docs/results_sim.md).
 
 ## Reading the dashboard
 
-The window is the track on the left and a panel on the right. Everything in the panel is read from the car's state;
-nothing there feeds back into how it drives.
+The window shows the track on the left and a panel on the right. The panel only reads the car's state; nothing in it
+feeds back into how the car drives.
 
-- **Track**: the racing line is coloured by planned speed (blue slow, red fast; press C for the grip each section
-  trusts, or its confidence). The thin blue line is the centerline, the white line is where the car really drove
-  over the last lap, the cyan line ahead of the car is the path the safety reflex is checking, and the yellow dot is
-  where pure pursuit is aiming. Red dots are mapped walls (bright while exploring). The car turns orange while its
-  tyres slide and gets a red ring while the reflex brakes.
-- **Lap times**: this lap, last, best, and "what it thinks it can do now", the lap time its current plan and learned
-  grip add up to. The bars are every race lap (green = best, white = the last one).
-- **Speed**: actual speed against what the controller asks for, on a 0 to top-speed bar, with a short history.
-- **What it has learned**: one bar per section of the line. Height is the grip that section trusts (m/s²), colour is
-  how sure it is (clean laps in a row), a white tick is where it last had trouble, and small boxes are straights,
-  where speed never tests the grip. "Trouble at ... g" is the measured limit: the median grip at which corners last
-  slid, left the line or made the reflex brake.
-- **Safety**: whether the reflex is braking, time until something on the checked path would be hit, and counts of
+- Track: the racing line is coloured by planned speed, blue for slow and red for fast. Press C to colour it by the
+  grip each section trusts, or by its confidence. The thin blue line is the centerline, the white line is where the
+  car actually drove over the last lap, the cyan line ahead of the car is the path the reflex is checking, and the
+  yellow dot is where pure pursuit is aiming. Red dots are mapped walls, bright while exploring. The car turns orange
+  while its tyres slide and gets a red ring while the reflex brakes.
+- Lap times: this lap, the last one, the best one, and "what it thinks it can do now", which is the lap time its
+  current plan and learned grip add up to. The bars show every race lap; the best is green and the last is white.
+- Speed: actual speed against what the controller asks for, on a bar from 0 to top speed, with a short history.
+- What it has learned: one bar per section of the line. Height is the grip that section trusts in m/s², colour is how
+  sure it is (clean laps in a row), and a white tick marks where it last had trouble. Small boxes are straights,
+  where speed never tests the grip. "Trouble at ... g" is the median grip at which corners last slid, left the line
+  or made the reflex brake, so it is the limit the car has measured.
+- Safety: whether the reflex is braking, how long until something on the checked path would be hit, and counts of
   reflex events, back-ups and crashes.
-- **Debug** (D): tracking error, lookahead distance, whether the reflex is checking the planned path or the steering
-  arc, map mismatch (the track-change detector), the current section's multiplier and ceiling, replans, dropped boxes
-  and track swaps, and how much faster than real time the sim runs.
+- Debug, toggled with D: tracking error, lookahead distance, whether the reflex is checking the planned path or the
+  steering arc, map mismatch (what the track-change detector sees), the current section's multiplier and ceiling,
+  replans, dropped boxes, track swaps, and how much faster than real time the sim is running.
 
 ## Random tracks
 
-`--random` builds a new track from a seed and drives it. Easy tracks are a few big sweeping corners, medium ones
-are tighter and narrower, hard ones are the outline of a random blob of grid cells (L, U and S shapes, 1.0 to
-1.2 m corners, 1.2 m wide). Boxes come three ways: known before the explore lap, dropped mid-race, or a slalom.
-Every candidate is checked before it is used (corner radius, gaps between passes, room next to every box, what
-a dropped box does to the change detector, and a run of the real planner on the true walls); about a third to
-nine tenths of candidates pass, and the generator just tries the next one.
+`--random` builds a new track from a seed and drives it. Easy tracks have a few big sweeping corners, and medium ones
+are tighter and narrower. Hard ones follow the outline of a random blob of grid cells, which gives L, U and S shapes
+with 1.0 to 1.2 m corners on a 1.2 m wide track. Boxes come three ways: placed before the explore lap, dropped
+mid-race, or set out as a slalom.
+
+Every candidate track is checked before it is used: corner radius, gaps between passes, room next to every box, what
+a dropped box does to the change detector, and a run of the real planner on the true walls. Between a third and nine
+tenths of candidates pass, and the generator just tries the next one.
 
 ![random tracks](docs/plots/bench_gallery.png)
 
 90 random tracks (30 per difficulty, 10 laps each, all three kinds of boxes) all finish without a crash, and on
-every one the best lap beats the first race lap by 45 to 47 %. 300 larger tracks: 299 of 300, no crash. With
-reverse recovery switched off, 53 of those 300 runs end with the car parked against a box or a wall (30 % of the
-hard ones).
+every one the best lap is 45 to 47 % faster than the first race lap. Of 300 larger tracks, 299 finish and none
+crash. With reverse recovery switched off, 53 of those 300 runs end with the car parked against a box or a wall,
+including 30 % of the hard ones.
 
 ![improvement](docs/plots/bench_improvement.png)
 
 ## Tracks
 
-Five hand-made tracks in `tools/make_tracks.py`, all 1.2 to 1.4 m wide: `oval`, `hairpin` (one 1 m radius turn),
+Five hand-made tracks live in `tools/make_tracks.py`, all 1.2 to 1.4 m wide: `oval`, `hairpin` (one 1 m radius turn),
 `chicane` (two S-bends), `twisty` (a deep pocket and a diagonal, nine corners) and `snake` (four columns joined by
-three hairpins). Corners are rounded to a 1 m radius, which is about the tightest this car turns cleanly. On `twisty` the car goes from a 45 s explore lap to 6.45 s,
-on `snake` from 50 s to 7.0 s.
+three hairpins). Corners are rounded to a 1 m radius, about the tightest this car turns cleanly. On `twisty` the car
+goes from a 45 s explore lap to 6.45 s, and on `snake` from 50 s to 7.0 s.
 
 ## Running it
 
@@ -137,9 +142,10 @@ python tools/run_experiments.py && python tools/plot_learning.py   # the plots a
 python tools/make_tracks.py                           # regenerate the five tracks
 ```
 
-Every number lives in [racer/config.yaml](racer/config.yaml). Runs write `logs/laps.csv`, `logs/events.csv` (reflex,
-recover, stuck, crash, drop and swap events) and the map, centerline, racing line, speed profile and multipliers as
-`logs/<track>_*.npy`; `--log-dir` puts them somewhere else. A headless run that gets stuck exits with code 3.
+Every number lives in [racer/config.yaml](racer/config.yaml). A run writes `logs/laps.csv`, `logs/events.csv`
+(reflex, recover, stuck, crash, drop and swap events) and the map, centerline, racing line, speed profile and
+multipliers as `logs/<track>_*.npy`; `--log-dir` puts them somewhere else. A headless run that gets stuck exits with
+code 3.
 
 ## Layout
 
