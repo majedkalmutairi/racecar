@@ -2,6 +2,8 @@ import math
 
 import numpy as np
 
+from racer.planning.speed_profile import backward_pass
+
 
 def wrap_angle(a):
     return (a + math.pi) % (2 * math.pi) - math.pi
@@ -31,10 +33,22 @@ class PurePursuit:
         self.ld_max = race["ld_max_m"]
         self.window = race["search_window"]
         self.ds = cfg["plan"]["ds_m"]
+        self.a_brake = cfg["plan"]["a_brake"]
         self.idx = 0
         self.multiplier = np.ones(self.n)
         self.target = line[0]
         self.v_target = 0.0
+
+    @property
+    def multiplier(self):
+        return self._mult
+
+    @multiplier.setter
+    def multiplier(self, mult):
+        """Learned speed multiplier per point. The target speed is the profile times the multiplier, braked again,
+        so the car slows down in time for a section that learned to be slow instead of arriving at its neighbour's speed."""
+        self._mult = np.asarray(mult, dtype=float)
+        self.v_target_line = backward_pass(list(self.v_profile * self._mult), self.a_brake, self.ds)
 
     def relocate(self, pose):
         """Search the whole line for the nearest point; used at the start and after a teleport."""
@@ -50,6 +64,25 @@ class PurePursuit:
         ld = float(np.clip(self.ld_k * v, self.ld_min, self.ld_max))
         return (idx + int(ld / self.ds)) % self.n
 
+    def predict(self, pose, v, n):
+        """Where this controller will take the car over the next n steps of ds metres at speed v:
+        the same steering law run forward on the bicycle model. Includes the corner cutting the real car does."""
+        x, y, yaw = pose
+        idx = self.idx
+        path = np.empty((n, 2))
+        for i in range(n):
+            near = (idx + np.arange(-2, 10)) % self.n
+            idx = int(near[np.argmin(np.hypot(self.line[near, 0] - x, self.line[near, 1] - y))])
+            tx, ty = self.line[self.lookahead_index(idx, v)]
+            alpha = wrap_angle(math.atan2(ty - y, tx - x) - yaw)
+            steer = math.atan2(2 * self.L * math.sin(alpha), max(math.hypot(tx - x, ty - y), 1e-6))
+            steer = max(-self.max_steer, min(self.max_steer, steer))
+            x += self.ds * math.cos(yaw)
+            y += self.ds * math.sin(yaw)
+            yaw += self.ds / self.L * math.tan(steer)
+            path[i] = x, y
+        return path
+
     def step(self, pose, v):
         """Returns (speed, steer) for the car."""
         x, y, yaw = pose
@@ -63,7 +96,7 @@ class PurePursuit:
         steer = math.atan2(2 * self.L * math.sin(alpha), ld)
         steer = max(-self.max_steer, min(self.max_steer, steer))
 
-        speed = min(self.v_profile[idx], self.v_profile[i_target]) * self.multiplier[idx]
+        speed = min(self.v_target_line[idx], self.v_target_line[i_target])
         self.target = target
         self.v_target = float(speed)
         return self.v_target, steer

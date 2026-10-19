@@ -65,7 +65,7 @@ def plot_multipliers(track):
     sections = np.arange(len(mults[0]))
     mean = mults.mean(axis=0)
     plt.figure(figsize=(6, 4))
-    plt.bar(sections, mean, yerr=[mean - mults.min(axis=0), mults.max(axis=0) - mean], capsize=3)
+    plt.bar(sections, mean, yerr=np.maximum([mean - mults.min(axis=0), mults.max(axis=0) - mean], 0), capsize=3)
     plt.axhline(1.0, color="grey", linestyle="--", label="speed profile as planned")
     plt.xlabel("section of the racing line")
     plt.ylabel("learned speed multiplier")

@@ -154,7 +154,7 @@ def check_plan(layout, wall_all, cfg):
     grid = grid_from_mask(wall_all, cfg)
     try:
         center, width = build_centerline(grid, layout.centre, cfg)
-        line = build_racing_line(center, width, cfg)
+        line = build_racing_line(center, width, cfg, grid)
         build_speed_profile(line, cfg)
     except Exception:
         return ["plan_failed"]

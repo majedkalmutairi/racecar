@@ -63,6 +63,9 @@ class Dashboard:
         y = text(screen, self.font, f"speed  {state['speed']:.2f} m/s   target  {state['v_target']:.2f}", x, y)
         mismatch = state["mismatch"]
         y = text(screen, self.font, f"map mismatch  {'-' if mismatch is None else f'{mismatch:.2f}'}", x, y)
+        conf = state["confidence"]
+        if conf is not None:
+            y = text(screen, self.font, f"confidence  {100 * conf:.0f} %", x, y)
         ttc = state["min_ttc"]
         colour = ALERT if state["safety_active"] else TEXT
         y = text(screen, self.font, f"min ttc  {'inf' if ttc == float('inf') else f'{ttc:.2f} s'}", x, y, colour) + 10

@@ -13,12 +13,13 @@ car:
   max_speed_mps: 8
   max_reverse_mps: 0.5  # reverse is only used to back out of a dead end
   max_steer_rad: 0.4
-  max_accel: 4
-  max_brake: 8
+  max_accel: 6         # brushless motor, m/s^2
+  max_brake: 6         # ESC brake, below the grip so the car can still steer while braking
+  grip_mps2: 8.0       # tyre grip (~0.8 g): past it the car slides wide instead of turning, and cannot brake as hard
   length_m: 0.55
   width_m: 0.3
   friction_decel: 1.0
-  speed_kp: 3.0       # accel = speed_kp * (target speed - speed)
+  speed_kp: 8.0       # accel = speed_kp * (target speed - speed)
 lidar:
   n_beams: 108
   fov_rad: 4.71       # 270 deg, centred on the heading
@@ -52,12 +53,14 @@ plan:
   snap_iters: 3
   center_smooth_iters: 10
   margin_m: 0.3       # racing line keeps this far from the wall: half the car plus more than the reflex margin
+  wall_clear_m: 0.35  # ...and never comes closer than this to any mapped wall or box: half the car + 0.2 m for tracking error
   smooth_iters: 200
   smooth_alpha: 0.3
-  a_lat_max: 3.0      # corner grip, m/s^2: v = sqrt(a_lat_max * R)
-  a_brake: 4.0
-  a_accel: 2.5
+  a_lat_max: 6.0      # corner grip the plan assumes, m/s^2: v = sqrt(a_lat_max * R); learning finds the rest
+  a_brake: 5.0
+  a_accel: 4.0
   kappa_eps: 1.0e-3   # straight = curvature below this
+  curv_span_m: 0.6    # the speed profile reads curvature over this length of line
   replan_cells: 5     # this many new wall cells away from the known walls while racing = new obstacle, replan
   replan_cooldown_s: 3.0
 race:
@@ -65,13 +68,21 @@ race:
   ld_min_m: 0.5
   ld_max_m: 2.0
   search_window: 30   # nearest-point search looks this many points ahead of the last match
+  trust_err_m: 0.2    # the reflex trusts the plan while the car is this close to the line...
+  trust_heading_rad: 0.4  # ...and pointing along it
+  trust_horizon_m: 1.0    # line checked this far beyond the stopping distance
 learning:
   n_sections: 20
   start_mult: 0.6     # first race lap runs at 60 % of the speed profile
-  up: 0.08            # clean section: multiplier * (1 + up)
-  down: 0.15          # problem section: multiplier * (1 - down)
+  up: 0.05            # clean section: multiplier * (1 + up * clean laps in a row)...
+  up_max: 0.15        # ...but never more than this in one lap
+  down: 0.10          # problem section: multiplier * (1 - down), and its old value becomes a ceiling
+  down_crash: 0.25    # ...a crash backs off harder
+  below_ceiling: 0.98 # a section climbs back to this fraction of its ceiling...
+  probe_laps: 3       # ...and after this many clean laps in a row
+  probe: 0.04         # the ceiling is raised this much to try again
   min_mult: 0.2
-  max_mult: 1.1
+  max_mult: 2.5       # no real cap: grip and tracking error decide
   err_ok_m: 0.12      # lateral error above this marks the section as a problem
 safety:
   ttc_s: 0.6            # slow down when the predicted path hits something sooner than this
@@ -87,6 +98,11 @@ safety:
   bubble_m: 0.4         # beams this close to the nearest hit are blanked before the gap search
   steer_options: 17     # steering angles tried when no gap is open at all
   events_csv: logs/events.csv
+slip:                   # the car turns less than its steering asks for = the tyres are sliding
+  ratio: 0.95           # measured yaw rate below this fraction of v * tan(steer) / wheelbase...
+  min_rate: 0.5         # ...when that is at least this many rad/s...
+  min_v_mps: 1.0        # ...and the car is moving at least this fast
+  lift: 0.9             # while sliding, the target speed is at most this fraction of the current speed
 recovery:
   stuck_s: 1.0          # wanting to drive but not moving for this long = stuck
   stuck_v_mps: 0.05

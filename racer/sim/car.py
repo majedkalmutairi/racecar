@@ -28,14 +28,23 @@ class Car:
         self.length = c["length_m"]
         self.width = c["width_m"]
         self.friction = c["friction_decel"]
+        self.grip = c["grip_mps2"]
+        self.sliding = False
 
     def step(self, accel_cmd, steer_cmd, dt):
         steer = clamp(steer_cmd, -self.max_steer, self.max_steer)
-        accel = clamp(accel_cmd, -self.max_brake, self.max_accel)
+        turn = math.tan(steer) / self.L                       # curvature the wheels ask for
+        # the tyres give at most `grip` m/s^2 in total (friction circle). Braking and accelerating take theirs
+        # first; turning gets what is left, and a corner too fast for that is driven wider: the car slides
+        accel = clamp(accel_cmd, -min(self.max_brake, self.grip), min(self.max_accel, self.grip))
+        a_lat_left = math.sqrt(self.grip ** 2 - accel ** 2)
+        self.sliding = self.v ** 2 * abs(turn) > a_lat_left
+        if self.sliding:
+            turn = math.copysign(a_lat_left / self.v ** 2, turn)
 
         self.x += self.v * math.cos(self.yaw) * dt
         self.y += self.v * math.sin(self.yaw) * dt
-        self.yaw += self.v / self.L * math.tan(steer) * dt
+        self.yaw += self.v * turn * dt
         self.yaw = (self.yaw + math.pi) % (2 * math.pi) - math.pi
         if accel == 0.0:
             # rolling with no command: friction slows the car to a stop, never past it

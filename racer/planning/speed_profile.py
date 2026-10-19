@@ -3,10 +3,10 @@ import math
 import numpy as np
 
 
-def curvature(line, eps=1e-9):
-    """Signed curvature (1/radius) at every point of a closed loop, from each point and its neighbours."""
-    prev = np.roll(line, 1, axis=0)
-    nxt = np.roll(line, -1, axis=0)
+def curvature(line, eps=1e-9, k=1):
+    """Signed curvature (1/radius) at every point of a closed loop, from each point and the points k either side."""
+    prev = np.roll(line, k, axis=0)
+    nxt = np.roll(line, -k, axis=0)
     d1 = line - prev
     d2 = nxt - line
     cross = d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0]
@@ -39,7 +39,9 @@ def forward_pass(v, a_accel, ds):
 
 def build_speed_profile(line, cfg):
     plan = cfg["plan"]
-    kappa = curvature(line)
+    # read the curvature over the distance the car actually turns over (pure pursuit aims >= 0.5 m ahead),
+    # so a few-centimetre kink in the line is not mistaken for a hairpin
+    kappa = curvature(line, k=max(int(round(plan["curv_span_m"] / (2 * plan["ds_m"]))), 1))
     v = max_speed_from_curvature(kappa, plan["a_lat_max"], cfg["car"]["max_speed_mps"], plan["kappa_eps"])
     v = backward_pass(v, plan["a_brake"], plan["ds_m"])
     v = forward_pass(v, plan["a_accel"], plan["ds_m"])

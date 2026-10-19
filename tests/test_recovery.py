@@ -10,7 +10,8 @@ from racer.sim.car import Car
 
 CFG = {
     "car": {"wheelbase_m": 0.33, "max_steer_rad": 0.4, "length_m": 0.55, "width_m": 0.3, "max_speed_mps": 8,
-            "max_reverse_mps": 0.5, "max_accel": 4, "max_brake": 8, "friction_decel": 1.0},
+            "max_reverse_mps": 0.5, "max_accel": 4, "max_brake": 8, "friction_decel": 1.0, "grip_mps2": 8.0},
+    "lidar": {"max_range_m": 12},
     "safety": {"ttc_s": 0.6, "fov_deg": 180, "body_margin_m": 0.1, "v_min_mps": 0.05,
                "brake_speed_mps": 0.0, "hold_s": 0.5, "steer_options": 17,
                "escape_clear_m": 0.8, "stop_clear_m": 0.4, "escape_speed_mps": 1.0,
@@ -19,7 +20,7 @@ CFG = {
                  "back_step_m": 0.25, "max_attempts": 3, "spot_m": 0.5, "clear_m": 2.0, "grace_s": 1.5,
                  "rear_beam_m": 0.2, "rear_check_m": 0.1, "map_margin_m": 0.05, "no_progress_s": 30,
                  "progress_m": 1.0},
-    "mapping": {"min_hits": 3},
+    "mapping": {"min_hits": 3, "res_m": 0.05},
     "laps": {"radius_m": 0.5, "min_lap_s": 3, "min_lap_m": 5},
 }
 ANGLES = np.linspace(-np.radians(135), np.radians(135), 108)
@@ -113,3 +114,21 @@ def test_backing_up_near_the_start_is_not_a_lap():
         t += 0.2
         assert laps.update((x, 0.0, 0.0), t) is None
     assert laps.count == 0
+
+
+def test_too_fast_for_the_grip_slides_wide():
+    car = Car(CFG)
+    car.v = 5.0
+    car.step(0.0, 0.3, DT)                                      # asks for 5^2 * tan(0.3) / 0.33 = 23.4 m/s^2
+    assert car.sliding
+    slow = Car(CFG)
+    slow.v = 1.0
+    slow.step(0.0, 0.3, DT)                                     # 0.9 m/s^2: well inside the grip
+    assert not slow.sliding
+
+
+def test_braking_takes_its_grip_first():
+    car = Car(CFG)
+    car.v = 3.0
+    car.step(-8.0, 0.2, DT)                                     # full brake (capped at the grip) leaves no grip to turn
+    assert car.sliding and math.isclose(car.v, 3.0 - 8.0 * DT)

@@ -27,6 +27,7 @@ class SafetyReflex:
         self.half_w = car["width_m"] / 2
         self.margin = s["body_margin_m"]
         self.angles = beam_angles
+        self.max_range = cfg["lidar"]["max_range_m"]
         self.fwd = np.abs(beam_angles) <= math.radians(s["fov_deg"] / 2)
         self.cos = np.cos(beam_angles)
         self.sin = np.sin(beam_angles)
@@ -55,6 +56,27 @@ class SafetyReflex:
         along = np.where(on_path & self.fwd & (px > 0), along - self.nose, np.inf)
         return float(max(along.min(), 0.0))
 
+    def line_clearance(self, scan, pose, ahead):
+        """Metres the car can follow the planned line before its body comes within the margin of a lidar hit.
+
+        ahead: the next racing-line points, starting at the car. The body passes over a hit near line point i
+        while the rear axle is up to `nose` behind it, hence the subtraction at the end.
+        """
+        x, y, yaw = pose
+        use = self.fwd & (scan < self.max_range)
+        a = yaw + self.angles[use]
+        hits = np.c_[x + scan[use] * np.cos(a), y + scan[use] * np.sin(a)]
+        if len(hits) == 0:
+            return math.inf
+        s = np.concatenate([[math.hypot(ahead[0, 0] - x, ahead[0, 1] - y)],
+                            np.linalg.norm(np.diff(ahead, axis=0), axis=1)]).cumsum()
+        d = np.linalg.norm(hits[:, None, :] - ahead[None, :, :], axis=2)
+        nearest = d.argmin(axis=1)                      # where along the line each hit sits...
+        on_line = d.min(axis=1) < self.half_w + self.margin     # ...and whether it is close enough sideways
+        if not on_line.any():
+            return math.inf
+        return float(max(s[nearest[on_line]].min() - self.nose, 0.0))
+
     def roomiest_steer(self, scan):
         room = [self.path_clearance(scan, s) for s in self.steer_options]
         return float(self.steer_options[int(np.argmax(room))])
@@ -80,12 +102,23 @@ class SafetyReflex:
         steer = math.atan2(2 * self.L * math.sin(angle), self.gap_range_m)
         return max(-self.max_steer, min(self.max_steer, steer))
 
-    def apply(self, cmd, scan, v, t_now):
+    def apply(self, cmd, scan, v, t_now, pose=None, ahead=None):
         """cmd = (speed, steer) from the mode controller. Returns (cmd, active).
 
-        Too fast for the path ahead: slow to the speed at which it stays ttc_s away.
-        Path ahead blocked: head for open space instead. No room at all: stop.
+        On the plan (ahead = the racing line in front of the car): only something on that line counts, and the
+        answer is to slow down to the speed that keeps it ttc_s away; the plan keeps steering.
+        Off the plan, or the line itself blocked: judge the arc the current steer would drive. Too fast for it:
+        slow down. Arc blocked: head for open space instead. No room at all: stop.
         """
+        if ahead is not None:
+            clearance = self.line_clearance(scan, pose, ahead)
+            if clearance >= self.escape_clear_m:
+                self.min_ttc = clearance / max(v, self.v_min)
+                if self.min_ttc < self.ttc_s:
+                    self.hold_until = t_now + self.hold_s
+                if t_now >= self.hold_until:
+                    return cmd, False
+                return (min(cmd[0], clearance / self.ttc_s), cmd[1]), True
         clearance = self.path_clearance(scan, cmd[1])
         self.min_ttc = clearance / max(v, self.v_min)
         if self.min_ttc < self.ttc_s or clearance < self.escape_clear_m:

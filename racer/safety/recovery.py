@@ -33,7 +33,8 @@ class StuckRecovery:
         self.max_steer = car["max_steer_rad"]
         self.left = safety.fwd & (safety.angles > 0)
         self.right = safety.fwd & (safety.angles < 0)
-        self.outline = body_outline(car["length_m"], car["width_m"], car["wheelbase_m"] / 2, r["map_margin_m"])
+        self.outline = body_outline(car["length_m"], car["width_m"], car["wheelbase_m"] / 2, 0.0)
+        self.margin = r["map_margin_m"] + cfg["mapping"]["res_m"] / 2     # cell centres sit half a cell inside the wall
         self.reset()
 
     def reset(self):
@@ -108,21 +109,32 @@ class StuckRecovery:
         return -self.reverse_v, self.steer
 
     def rear_blocked(self, scan, pose, grid):
-        """True if the last beams on either side see something close, or the body is about to touch a mapped wall
-        it is not touching already (the nose may be against the thing the car is backing away from)."""
+        """True if the last beams on either side see something close, or backing up would bring any part of the
+        body closer to a mapped wall while it is already within the margin. Parts that are close may only move
+        away: the nose is often right against the thing the car is backing out from."""
         if min(scan[:2].min(), scan[-2:].min()) < self.rear_beam_m:
             return True
-        now = self.touching(pose, grid)
-        after = self.touching(back_along_arc(pose, self.check_m, self.steer, self.L), grid)
-        return bool(np.any(after & ~now))
+        walls = self.walls_near(pose, grid)
+        if len(walls) == 0:
+            return False
+        now = self.clearance(pose, walls)
+        after = self.clearance(back_along_arc(pose, self.check_m, self.steer, self.L), walls)
+        return bool(np.any((after < self.margin) & (after < now - 1e-3)))
 
-    def touching(self, pose, grid):
+    def walls_near(self, pose, grid, reach=1.2):
+        """Centres of the mapped wall cells within reach metres of the car."""
+        r0, c0 = grid.world_to_cell(pose[0] - reach, pose[1] - reach)
+        r1, c1 = grid.world_to_cell(pose[0] + reach, pose[1] + reach)
+        rows, cols = np.nonzero(grid.hits[r0:r1 + 1, c0:c1 + 1] >= self.min_hits)
+        x, y = grid.cell_to_world(rows + r0, cols + c0)
+        return np.c_[x, y]
+
+    def clearance(self, pose, walls):
+        """Distance from every point of the body outline to the nearest wall cell centre."""
         x, y, yaw = pose
         c, s = math.cos(yaw), math.sin(yaw)
-        wx = x + self.outline[:, 0] * c - self.outline[:, 1] * s
-        wy = y + self.outline[:, 0] * s + self.outline[:, 1] * c
-        row, col = grid.world_to_cell(wx, wy)
-        return grid.hits[row, col] >= self.min_hits
+        pts = np.c_[x + self.outline[:, 0] * c - self.outline[:, 1] * s, y + self.outline[:, 0] * s + self.outline[:, 1] * c]
+        return np.linalg.norm(pts[:, None, :] - walls[None, :, :], axis=2).min(axis=1)
 
     def _watch_progress(self, pose, t_now):
         """Gives up if the car has not got progress_m away from where it was for no_progress_s."""

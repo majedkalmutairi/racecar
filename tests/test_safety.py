@@ -6,6 +6,7 @@ from racer.safety.ttc import SafetyReflex
 
 CFG = {
     "car": {"wheelbase_m": 0.33, "max_steer_rad": 0.4, "length_m": 0.55, "width_m": 0.3},
+    "lidar": {"max_range_m": 12},
     "safety": {"ttc_s": 0.6, "fov_deg": 180, "body_margin_m": 0.1, "v_min_mps": 0.05,
                "brake_speed_mps": 0.0, "hold_s": 0.5, "steer_options": 17,
                "escape_clear_m": 0.8, "stop_clear_m": 0.4, "escape_speed_mps": 1.0,
@@ -87,3 +88,24 @@ def test_safety_stops_when_nothing_is_clear():
     scan = np.full(108, 0.5)
     cmd, active = r.apply((3.0, 0.0), scan, 0.0, t_now=1.0)
     assert active and cmd[0] == 0.0
+
+
+def test_on_the_plan_only_things_on_the_line_count():
+    r = SafetyReflex(ANGLES, CFG)
+    scan = np.full(108, 10.0)
+    scan[beam(-60)] = 0.6                                       # a wall 0.5 m to the right, not on a straight line
+    ahead = np.c_[np.arange(0, 3, 0.1), np.zeros(30)]
+    assert r.line_clearance(scan, (0.0, 0.0, 0.0), ahead) == math.inf
+    (speed, steer), active = r.apply((4.0, 0.0), scan, 4.0, 0.0, (0.0, 0.0, 0.0), ahead)
+    assert (speed, steer) == (4.0, 0.0) and not active
+
+
+def test_on_the_plan_a_box_on_the_line_slows_the_car():
+    r = SafetyReflex(ANGLES, CFG)
+    scan = np.full(108, 10.0)
+    scan[beam(0)] = 1.5                                         # something 1.5 m straight ahead, right on the line
+    ahead = np.c_[np.arange(0, 3, 0.1), np.zeros(30)]
+    clearance = r.line_clearance(scan, (0.0, 0.0, 0.0), ahead)
+    assert abs(clearance - (1.5 - NOSE)) < 0.11
+    (speed, _), active = r.apply((4.0, 0.0), scan, 4.0, 0.0, (0.0, 0.0, 0.0), ahead)
+    assert active and abs(speed - clearance / 0.6) < 1e-9

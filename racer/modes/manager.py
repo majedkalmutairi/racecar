@@ -47,6 +47,9 @@ class ModeManager:
         self.was_crashed = False
         self.lap_crashes = 0
         self.cmd = (0.0, 0.0)
+        self.sent = (0.0, 0.0)
+        self.last_pose = self.last_t = self.last_v = None
+        self.slipping = False
         self.mode = None
         self._start_explore(start_pose, None)
 
@@ -92,7 +95,7 @@ class ModeManager:
         if self.recovery.reversing:  # the reflex only looks forward
             out, active = cmd, False
         else:
-            out, active = self.safety.apply(cmd, scan, v, t_now)
+            out, active = self.safety.apply(cmd, scan, v, t_now, pose, self._line_ahead(pose, v))
         if active and not self.safety_active:
             self._log_event(t_now, out[1])
         self.safety_active = active
@@ -105,10 +108,30 @@ class ModeManager:
             self.note("stuck", t_now)
             print(f"[recover] gave up at ({pose[0]:.2f}, {pose[1]:.2f})")
 
+        self.slipping = self._slipping(pose, v, t_now)
+        if self.slipping:  # lift off, like a driver would: less speed, less sideways load, grip comes back
+            out = (min(out[0], v * self.cfg["slip"]["lift"]), out[1])
         if self.racer is not None:
             err = lateral_error(pose, self.line, self.racer.idx)
-            self.learner.observe(self.racer.idx, err, active or self.recovery.reversing, car.crashed)
+            trouble = active or self.recovery.reversing or self.slipping
+            self.learner.observe(self.racer.idx, err, trouble, car.crashed)
+        self.sent = out
         return out
+
+    def _slipping(self, pose, v, t_now):
+        """The car turns clearly less than the steering it was given asks for: the tyres are sliding.
+        Uses only the pose and the last command, so the same check works on the real car (yaw from the IMU)."""
+        last_pose, last_t, last_v = self.last_pose, self.last_t, self.last_v
+        self.last_pose, self.last_t, self.last_v = pose, t_now, v
+        if last_pose is None or t_now <= last_t:
+            return False
+        v = (v + last_v) / 2                     # the turn just measured happened at the speed of the last frame
+        c = self.cfg["slip"]
+        car = self.cfg["car"]
+        steer = max(-car["max_steer_rad"], min(car["max_steer_rad"], self.sent[1]))
+        asked = v * np.tan(steer) / car["wheelbase_m"]
+        got = ((pose[2] - last_pose[2] + np.pi) % (2 * np.pi) - np.pi) / (t_now - last_t)
+        return v > c["min_v_mps"] and abs(asked) > c["min_rate"] and abs(got) < c["ratio"] * abs(asked)
 
     def _explore(self, scan, pose):
         self.grid.add_scan(scan, pose, self.angles, self.max_range)
@@ -127,7 +150,7 @@ class ModeManager:
         """Map + an ordered loop of seed points -> centerline, racing line, speed profile, and the objects that use them."""
         cfg = self.cfg
         self.center, self.width = build_centerline(self.grid, seed, cfg)
-        self.line = build_racing_line(self.center, self.width, cfg)
+        self.line = build_racing_line(self.center, self.width, cfg, self.grid)
         self.speed = build_speed_profile(self.line, cfg)
         self._save_plan()
 
@@ -149,6 +172,21 @@ class ModeManager:
         else:
             self._watch_for_obstacles(scan, pose, t_now)
         return speed, steer
+
+    def _line_ahead(self, pose, v):
+        """The racing line in front of the car, if the car is on it; None means the reflex should not trust the plan."""
+        if self.mode is not Mode.RACE or self.racer is None:
+            return None
+        r = self.cfg["race"]
+        idx = self.racer.idx
+        nxt = self.line[(idx + 1) % len(self.line)] - self.line[idx]
+        heading_err = (pose[2] - np.arctan2(nxt[1], nxt[0]) + np.pi) % (2 * np.pi) - np.pi
+        if abs(lateral_error(pose, self.line, idx)) > r["trust_err_m"] or abs(heading_err) > r["trust_heading_rad"]:
+            return None
+        horizon = v * self.cfg["safety"]["ttc_s"] + r["trust_horizon_m"]
+        # where the car will really go (pure pursuit cuts corners), not the line itself
+        ahead = self.racer.predict(pose, v, int(horizon / self.cfg["plan"]["ds_m"]) + 1)
+        return np.vstack([pose[:2], ahead])
 
     def _watch_for_obstacles(self, scan, pose, t_now):
         """Keep mapping while racing. A cluster of new wall cells away from the walls the explore lap saw is a new
@@ -182,6 +220,8 @@ class ModeManager:
         else:
             self.laps.restart(t_now)
             if self.racer is not None:
+                self.learner.crashed_at(self.racer.idx)
+                self.racer.multiplier = self.learner.multiplier_per_point()
                 self.racer.relocate(pose)
 
     def _lap_done(self, lap_time):
@@ -238,6 +278,7 @@ class ModeManager:
             "safety_active": self.safety_active,
             "last_event": self.last_event,
             "recovery": self.recovery.status(),
+            "confidence": float(self.learner.confidence().mean()) if self.learner is not None else None,
         }
 
     def close(self):
