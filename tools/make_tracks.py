@@ -1,21 +1,23 @@
-"""Generate the test tracks: tracks/<name>.png (white = drivable, black = wall) + tracks/<name>.yaml.
+"""Generate the hand-made test tracks: tracks/<name>.png (white = drivable, black = wall) + tracks/<name>.yaml.
+Random tracks come from racer/sim/trackgen.py, which also holds the corridor and rounded-corner geometry.
 
 Run from the repo root:  python tools/make_tracks.py
 """
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 import yaml
 from PIL import Image, ImageDraw
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from racer.sim.trackgen import arc, rounded  # noqa: E402
+from racer.sim.trackgen import corridor as corridor_px  # noqa: E402
+
 W, H = 1000, 700
 PX_PER_M = 100
 TRACKS_DIR = Path(__file__).resolve().parent.parent / "tracks"
-
-
-def to_px(x_m, y_m):
-    return x_m * PX_PER_M, H - y_m * PX_PER_M
 
 
 def save_track(name, draw_fn, start_pose):
@@ -31,41 +33,7 @@ def save_track(name, draw_fn, start_pose):
 
 
 def corridor(draw, points_m, width_m):
-    """Paint a white band of constant width along a closed centreline (list of (x, y) in metres)."""
-    r = width_m / 2 * PX_PER_M
-    pts = list(points_m) + [points_m[0]]
-    for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:]):
-        n = max(1, int(math.hypot(x1 - x0, y1 - y0) / 0.02))     # a disc every 2 cm
-        for t in np.linspace(0, 1, n, endpoint=False):
-            cx, cy = to_px(x0 + t * (x1 - x0), y0 + t * (y1 - y0))
-            draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill="white")
-
-
-def arc(cx, cy, r, a0, a1, n=200):
-    return [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in np.linspace(a0, a1, n)]
-
-
-def rounded(corners, r):
-    """Closed polygon -> the same loop with every corner replaced by an arc of radius r (smaller if the sides are short)."""
-    pts = []
-    n = len(corners)
-    for i in range(n):
-        p = np.array(corners[i], float)
-        u = np.array(corners[i - 1]) - p
-        v = np.array(corners[(i + 1) % n]) - p
-        len_u, len_v = np.linalg.norm(u), np.linalg.norm(v)
-        u, v = u / len_u, v / len_v
-        half = math.acos(np.clip(np.dot(u, v), -1, 1)) / 2
-        t = min(r / math.tan(half), 0.45 * len_u, 0.45 * len_v)
-        radius = t * math.tan(half)
-        bisector = (u + v) / np.linalg.norm(u + v)
-        centre = p + bisector * radius / math.sin(half)
-        a0 = math.atan2(*(p + u * t - centre)[::-1])
-        a1 = math.atan2(*(p + v * t - centre)[::-1])
-        sweep = (a1 - a0 + math.pi) % (2 * math.pi) - math.pi
-        pts += [tuple(centre + radius * np.array([math.cos(a0 + f * sweep), math.sin(a0 + f * sweep)]))
-                for f in np.linspace(0, 1, 12)]
-    return pts
+    corridor_px(draw, points_m, width_m, H, PX_PER_M)
 
 
 # oval: two ellipses, 1.4 m lane

@@ -1,4 +1,6 @@
 import argparse
+import math
+import sys
 import time
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from racer.sim.geometry import car_corners
 from racer.sim.gif import GifRecorder
 from racer.sim.sim_car import SimCar
 from racer.sim.track import Track, track_names
+from racer.sim.trackgen import MODES, generate, parse_modes, save
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -24,10 +27,19 @@ def parse_args():
     p.add_argument("--laps", type=int, default=0, help="stop after N laps (0 = run forever)")
     p.add_argument("--max-s", type=float, default=0, help="stop after this much simulated time (0 = no limit)")
     p.add_argument("--seed", type=int, default=None, help="lidar noise seed, overrides sim.seed")
-    p.add_argument("--fresh", action="store_true", help="delete logs/laps.csv and logs/events.csv first")
+    p.add_argument("--fresh", action="store_true", help="delete laps.csv, events.csv and this track's saved plan first")
+    p.add_argument("--log-dir", default=None, help="write all logs and plan files here instead of logs/")
     p.add_argument("--manual", action="store_true", help="start with arrow-key driving instead of the mode manager")
-    p.add_argument("--obstacles", action="store_true", help="add the boxes listed under obstacles.<track> in config.yaml")
-    p.add_argument("--drop-box", type=float, nargs=4, metavar=("X", "Y", "W", "H"), help="one box in metres...")
+    p.add_argument("--obstacles", nargs="?", const="all", default=None,
+                   help="named track: the boxes under obstacles.<track> in config.yaml; "
+                        "--random: a comma list of known, drop, slalom (no list = all three)")
+    p.add_argument("--random", action="store_true", help="generate a new track and drive it")
+    p.add_argument("--gen-seed", type=int, default=0, help="the same seed always gives the same track")
+    p.add_argument("--difficulty", default="medium", choices=["easy", "medium", "hard"])
+    p.add_argument("--size", default="medium", choices=["small", "medium", "large"])
+    p.add_argument("--size-m", type=float, nargs=2, metavar=("W", "H"), help="track area in metres, at most 10 x 10")
+    p.add_argument("--drop-box", type=float, nargs=4, action="append", metavar=("X", "Y", "W", "H"),
+                   help="a box in metres, repeat for more...")
     p.add_argument("--drop-at-lap", type=int, default=3, help="...dropped when this many laps are done")
     p.add_argument("--swap-track", default=None, help="replace the track with this one...")
     p.add_argument("--swap-at-lap", type=int, default=4, help="...when this many laps are done")
@@ -44,13 +56,32 @@ def load_config(path):
 
 def keyboard(keys, cfg):
     """Arrow keys -> (target speed, steer). No key = target 0, so the car brakes to a stop."""
-    speed = cfg["car"]["max_speed_mps"] if keys[pygame.K_UP] else 0.0
+    speed = 0.0
+    if keys[pygame.K_UP]:
+        speed = cfg["car"]["max_speed_mps"]
+    elif keys[pygame.K_DOWN]:
+        speed = -cfg["car"]["max_reverse_mps"]
     steer = 0.0
     if keys[pygame.K_LEFT]:
         steer = cfg["car"]["max_steer_rad"]
     elif keys[pygame.K_RIGHT]:
         steer = -cfg["car"]["max_steer_rad"]
     return speed, steer
+
+
+def drop_when_clear(drops, car, manager, t, clear_m):
+    """Drop every box whose lap has come, unless the car is so close it would land on it. Returns the rest."""
+    x, y, _ = car.get_pose()
+    left = []
+    for box, at_lap in drops:
+        bx, by, bw, bh = box
+        if manager.lap_total >= at_lap and math.hypot(bx + bw / 2 - x, by + bh / 2 - y) > clear_m:
+            car.track.add_box(*box)
+            manager.note("drop", t)
+            print(f"[sim] box dropped at {box[:2]}")
+        else:
+            left.append((box, at_lap))
+    return left
 
 
 def main():
@@ -60,15 +91,32 @@ def main():
         cfg["sim"]["track"] = args.track
     if args.seed is not None:
         cfg["sim"]["seed"] = args.seed
+    if args.random:
+        modes = MODES if args.obstacles == "all" else parse_modes(args.obstacles)
+        layout, _ = generate(args.gen_seed, args.difficulty, args.size, modes, cfg, args.size_m)
+        save(layout)
+        cfg["sim"]["track"] = layout.name
+        args.fresh = True                                       # same name, maybe different track: start clean
+        print(f"[gen] {layout.name}: {layout.info['lap_m']} m, {layout.width_m} m wide, boxes {layout.info['boxes']}")
     track_name = cfg["sim"]["track"]
+    if args.log_dir:
+        log_dir = Path(args.log_dir).resolve()
+        cfg["laps"]["csv_path"] = str(log_dir / "laps.csv")
+        cfg["safety"]["events_csv"] = str(log_dir / "events.csv")
+        cfg["mapping"]["map_dir"] = str(log_dir)
     if args.fresh:
         for rel in (cfg["laps"]["csv_path"], cfg["safety"]["events_csv"]):
             (REPO_ROOT / rel).unlink(missing_ok=True)
+        for f in (REPO_ROOT / cfg["mapping"]["map_dir"]).glob(f"{track_name}_*.np*"):
+            f.unlink()
 
     car = SimCar(cfg)
-    if args.obstacles:
+    if args.obstacles and not args.random:
         for box in cfg["obstacles"].get(track_name, []):
             car.track.add_box(*box)
+    for box in car.track.boxes_known:
+        car.track.add_box(*box)
+    drops = list(car.track.boxes_drop)                          # (box, at_lap), dropped once the car is clear
     manager = ModeManager(cfg, car.start_pose, track_name, REPO_ROOT)
 
     pygame.init()
@@ -82,10 +130,12 @@ def main():
         gif = GifRecorder(args.gif, args.gif_s, args.gif_from_lap) if args.gif else None
 
     pending_track = None
+    if headless:
+        screen = map_overlay = None
 
     def swap_track_when_free():
         """Replace the track on the first frame the car has room around it on the new one."""
-        nonlocal pending_track, map_overlay
+        nonlocal pending_track, map_overlay, screen
         if pending_track is None:
             return
         x, y, yaw = car.get_pose()
@@ -94,8 +144,14 @@ def main():
         if any(pending_track.is_wall(px, py) for px, py in around):
             return
         car.swap_track(pending_track)
+        for box in car.track.boxes_known:
+            car.track.add_box(*box)
         manager.track_name = car.track.name
+        manager.note("swap", sim_t)
         if not headless:
+            w, h = car.size_px
+            if screen.get_size() != (w + cfg["dashboard"]["panel_w"], h):
+                screen = pygame.display.set_mode((w + cfg["dashboard"]["panel_w"], h))
             map_overlay = MapOverlay(car.track, cfg["mapping"]["min_hits"])
         print(f"[sim] track swapped to {car.track.name}")
         pending_track = None
@@ -141,12 +197,17 @@ def main():
                 swapped = True
             swap_track_when_free()
             if args.drop_box and not dropped and manager.lap_total >= args.drop_at_lap:
-                car.track.add_box(*args.drop_box)
+                for box in args.drop_box:
+                    car.track.add_box(*box)
+                    manager.note("drop", sim_t)
+                    print(f"[sim] box dropped at {box[:2]}")
                 dropped = True
-                print(f"[sim] box dropped at {args.drop_box[:2]}")
+            drops = drop_when_clear(drops, car, manager, sim_t, cfg["trackgen"]["drop_clear_m"])
             if args.laps and manager.lap_total >= args.laps:
                 running = False
             if args.max_s and sim_t >= args.max_s:
+                running = False
+            if headless and manager.recovery.gave_up:
                 running = False
 
         if not headless:
@@ -169,6 +230,9 @@ def main():
     pygame.quit()
     print(f"{car.track.name}: {manager.lap_total} laps, {car.crashes} crashes, "
           f"{sim_t:.1f} s simulated in {time.perf_counter() - real_start:.1f} s real")
+    if manager.recovery.gave_up:
+        print("STUCK")
+        sys.exit(3)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ sim:
 car:
   wheelbase_m: 0.33
   max_speed_mps: 8
+  max_reverse_mps: 0.5  # reverse is only used to back out of a dead end
   max_steer_rad: 0.4
   max_accel: 4
   max_brake: 8
@@ -38,6 +39,7 @@ explore:
 laps:
   radius_m: 0.5       # a lap ends when the car re-enters this circle around the start
   min_lap_s: 3        # ...and at least this long after the last lap
+  min_lap_m: 5        # ...and after driving at least this far (backing up near the start is not a lap)
   csv_path: logs/laps.csv
 mapping:
   size_m: 20          # grid covers -10..+10 m in x and y
@@ -85,16 +87,65 @@ safety:
   bubble_m: 0.4         # beams this close to the nearest hit are blanked before the gap search
   steer_options: 17     # steering angles tried when no gap is open at all
   events_csv: logs/events.csv
+recovery:
+  stuck_s: 1.0          # wanting to drive but not moving for this long = stuck
+  stuck_v_mps: 0.05
+  want_v_mps: 0.1       # ...where "wanting to drive" means the controller asks for more than this
+  reverse_mps: 0.4
+  back_m: 0.5           # first back-up; every further try at the same spot goes back_step_m further
+  back_step_m: 0.25
+  max_attempts: 3
+  spot_m: 0.5           # tries within this distance of each other count as the same spot
+  clear_m: 2.0          # ...until the car gets this far away from it
+  grace_s: 1.5          # after a back-up the controller gets this long before stuck is judged again
+  rear_beam_m: 0.2      # the outermost beams (+-135 deg) seeing something this close stops the back-up
+  rear_check_m: 0.1     # the body is checked against the map this far along the reverse arc
+  map_margin_m: 0.05
+  no_progress_s: 30     # not getting progress_m away from a point for this long = give up
+  progress_m: 1.0
 track_change:
   threshold: 0.35     # fraction of beams that miss the map
   hold_s: 2.0         # ...for this long before the map is thrown away
   cell_tol: 2         # a beam "hits the map" if a wall cell is within this many cells
 obstacles:            # known boxes per track: [x, y, w, h] in metres, used with --obstacles
-  oval: [[8.0, 0.75, 0.3, 0.3]]
-  hairpin: [[5.0, 1.25, 0.3, 0.3]]
-  chicane: [[4.0, 1.3, 0.3, 0.3]]
-  twisty: [[6.0, 0.55, 0.3, 0.3]]
-  snake: [[4.0, 6.25, 0.3, 0.3]]
+  # each one >= 2.5 m from the start and leaves >= 0.85 m to the other wall
+  oval: [[5.0, 5.35, 0.3, 0.3]]
+  hairpin: [[0.3, 3.35, 0.3, 0.3]]
+  chicane: [[0.25, 3.35, 0.3, 0.3]]
+  twisty: [[9.3, 3.4, 0.3, 0.3]]
+  snake: [[0.4, 3.5, 0.3, 0.3]]
+trackgen:             # random tracks: racer/sim/trackgen.py makes them, racer/sim/trackcheck.py rejects bad ones
+  sizes: {small: [8, 6], medium: [10, 7], large: [10, 10]}   # metres; the map grid only covers 10 x 10
+  border_m: 0.3         # wall kept around the image edge
+  min_radius_m: 1.0     # tightest centreline corner (the car turns no tighter than 0.78 m)
+  wall_gap_m: 0.2       # wall left between two passes of the corridor
+  start_clear_m: 1.0    # no other part of the loop this close to the start (lap counter)
+  lap_m: [10, 40]
+  straight_kappa: 0.05  # curvature below this counts as straight
+  slalom_kappa: 0.5     # a slalom may sit on a bend gentler than this (radius > 2 m)
+  max_tries: 300
+  arc_frac: 0.5         # a corner arc may use up to this much of each side (0.5 = arcs may meet)
+  box_m: [0.3, 0.3]     # box size range, along x first
+  box_m_max: [0.5, 0.3]
+  box_start_clear_m: 2.5  # no box this close to the start along the track
+  box_spacing_m: 2.0    # boxes at least this far apart along the track
+  box_corner_radius_m: 1.2  # no box on a corner tighter than this
+  slalom_spacing_m: [1.8, 2.5]
+  slalom_drop: false    # true: slalom boxes appear mid-race instead of being there from the start
+  drop_from_lap: 3      # first dropped box appears after this many laps, then one per lap
+  drop_clear_m: 1.5     # a dropped box waits until the car is at least this far away
+  drop_mismatch_max: 0.25  # dropped boxes may hide at most this fraction of the beams (change detector: 0.35)
+  line_radius_factor: 1.2  # the planned line must be this much rounder than the car's tightest turn
+  line_clear_m: 0.25    # planned line at least this far from any wall or box (half the car + reflex margin)
+  difficulty:           # star = a few big sweeping corners; grid = the outline of a random blob of cells
+                        # reach = how far out toward the edge a star corner goes; cell_m = distance between
+                        # neighbouring passes, cells = fraction of the grid in the blob
+    easy:   {shape: star, corners: [4, 5], reach: [0.75, 1.0], radius_m: [1.8, 2.5], width_m: [1.5, 1.5],
+             known: [1, 1], drop: [1, 1], slalom: [2, 2], gap_m: 1.0}
+    medium: {shape: star, corners: [5, 7], reach: [0.55, 1.0], radius_m: [1.2, 1.8], width_m: [1.3, 1.5],
+             known: [1, 2], drop: [1, 1], slalom: [2, 3], gap_m: 0.9}
+    hard:   {shape: grid, cell_m: [2.2, 2.6], cells: [0.6, 0.9], jitter: 0.1, radius_m: [1.0, 1.2],
+             width_m: [1.2, 1.3], known: [1, 3], drop: [1, 2], slalom: [2, 3], gap_m: 0.85}
 dashboard:
   panel_w: 300
   graph_len: 200

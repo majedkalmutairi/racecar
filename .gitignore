@@ -12,3 +12,7 @@ logs/*.npy
 # plan files and experiment copies
 logs/*.npz
 logs/exp/
+
+# random tracks: regenerate with python -m racer.sim.trackgen
+tracks/gen_*
+logs/bench/

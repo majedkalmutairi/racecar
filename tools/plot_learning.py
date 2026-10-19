@@ -112,7 +112,6 @@ def main():
         lines.append(summary(track, times, mults))
     rows = plot_track_change()
     swap = next(i for i, r in enumerate(rows) if r["track"] != "oval")
-    events = sum(len(load_laps(p)) - 0 for p in [])
     print()
     print("\n".join(lines))
     print(f"\nTrack change: last oval lap {rows[swap - 1]['lap_time_s']} s, explore lap {rows[swap]['lap_time_s']} s, "
@@ -122,6 +121,8 @@ def main():
     for p in EXP.glob("*_events.csv"):
         with open(p, newline="") as f:
             for r in csv.DictReader(f):
+                if r.get("kind", "reflex") != "reflex":     # crashes, drops, swaps, recoveries are logged too
+                    continue
                 n_events += 1
                 n_first += r["mode"] == "RACE" and r["lap"] == "2"
     print(f"Safety events over all runs: {n_events} (of which {n_first} in the first race lap).")

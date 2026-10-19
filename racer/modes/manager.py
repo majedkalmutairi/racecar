@@ -14,9 +14,10 @@ from racer.mapping.grid import OccupancyGrid
 from racer.modes.explore import ExploreController
 from racer.planning.racing_line import build_racing_line
 from racer.planning.speed_profile import build_speed_profile
+from racer.safety.recovery import StuckRecovery
 from racer.safety.ttc import SafetyReflex
 
-EVENT_FIELDS = ["t", "lap", "section", "mode", "min_ttc", "steer"]
+EVENT_FIELDS = ["t", "lap", "section", "mode", "min_ttc", "steer", "kind"]
 
 
 class Mode(Enum):
@@ -37,6 +38,7 @@ class ModeManager:
         self.max_range = cfg["lidar"]["max_range_m"]
         self.explore = ExploreController(cfg)
         self.safety = SafetyReflex(self.angles, cfg)
+        self.recovery = StuckRecovery(cfg, self.safety)
         self.lap_file, self.lap_log = open_csv_log(self.root / cfg["laps"]["csv_path"], LAP_FIELDS)
         self.event_file, self.event_log = open_csv_log(self.root / cfg["safety"]["events_csv"], EVENT_FIELDS)
         self.lap_total = 0
@@ -70,6 +72,7 @@ class ModeManager:
         scan, pose, v = car.get_scan(), car.get_pose(), car.get_speed()
         if car.crashed and not self.was_crashed:
             self.lap_crashes += 1
+            self.note("crash", t_now)
         self.was_crashed = car.crashed
 
         lap_time = self.laps.update(pose, t_now)
@@ -86,14 +89,26 @@ class ModeManager:
             cmd = self._track_changed(pose, t_now)
         self.cmd = cmd
 
-        cmd, active = self.safety.apply(cmd, scan, v, t_now)
+        if self.recovery.reversing:  # the reflex only looks forward
+            out, active = cmd, False
+        else:
+            out, active = self.safety.apply(cmd, scan, v, t_now)
         if active and not self.safety_active:
-            self._log_event(t_now, cmd[1])
+            self._log_event(t_now, out[1])
         self.safety_active = active
+
+        gave_up = self.recovery.gave_up
+        out = self.recovery.step(cmd, out, scan, pose, v, t_now, self.grid)
+        if self.recovery.started:
+            self.note("recover", t_now, out[1])
+        if self.recovery.gave_up and not gave_up:
+            self.note("stuck", t_now)
+            print(f"[recover] gave up at ({pose[0]:.2f}, {pose[1]:.2f})")
+
         if self.racer is not None:
             err = lateral_error(pose, self.line, self.racer.idx)
-            self.learner.observe(self.racer.idx, err, active, car.crashed)
-        return cmd
+            self.learner.observe(self.racer.idx, err, active or self.recovery.reversing, car.crashed)
+        return out
 
     def _explore(self, scan, pose):
         self.grid.add_scan(scan, pose, self.angles, self.max_range)
@@ -155,10 +170,12 @@ class ModeManager:
         """Throw away the map, the plan and the learned multipliers; explore again from this pose."""
         for f in self.files:
             Path(f).unlink(missing_ok=True)
+        self.recovery.reset()
         self._start_explore(pose, t_now)
 
     def car_was_reset(self, pose, t_now):
         """The sim put the car back at the start after a crash."""
+        self.recovery.reset()
         if self.mode is Mode.EXPLORE:
             self.path = []
             self.laps = LapCounter(pose, self.cfg, t_now)
@@ -181,12 +198,16 @@ class ModeManager:
                   f"sections clean, mean multiplier {self.learner.mult.mean():.2f}")
 
     def _log_event(self, t_now, steer):
+        self.last_event = self.note("reflex", t_now, steer, self.safety.min_ttc)
+
+    def note(self, kind, t_now, steer=0.0, min_ttc=float("nan")):
+        """One row in events.csv: reflex, recover, stuck, crash, drop or swap."""
         section = int(self.learner.section_of[self.racer.idx]) if self.racer is not None else -1
-        self.last_event = {"t": round(t_now, 2), "lap": self.lap_total + 1, "section": section,
-                           "mode": self.mode.value, "min_ttc": round(self.safety.min_ttc, 2),
-                           "steer": round(steer, 2)}
-        self.event_log.writerow(self.last_event)
+        row = {"t": round(t_now, 2), "lap": self.lap_total + 1, "section": section, "mode": self.mode.value,
+               "min_ttc": round(min_ttc, 2), "steer": round(steer, 2), "kind": kind}
+        self.event_log.writerow(row)
         self.event_file.flush()
+        return row
 
     def _file(self, suffix):
         return self.root / self.cfg["mapping"]["map_dir"] / f"{self.track_name}_{suffix}"
@@ -216,6 +237,7 @@ class ModeManager:
             "min_ttc": self.safety.min_ttc,
             "safety_active": self.safety_active,
             "last_event": self.last_event,
+            "recovery": self.recovery.status(),
         }
 
     def close(self):

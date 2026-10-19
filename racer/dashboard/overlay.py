@@ -86,13 +86,15 @@ class Dashboard:
             text(screen, self.font, label, x + 80 * i + 30, y, DIM)
         y += 30
 
+        if state["recovery"]:
+            y = text(screen, self.big_font, state["recovery"], x, y, ALERT)
         if state["paused"]:
             y = text(screen, self.big_font, "PAUSED", x, y, ALERT)
         y = screen.get_height() - 4 * self.font.get_linesize() - 10
         y = text(screen, self.font, "R  reset and explore again", x, y, DIM)
         y = text(screen, self.font, "SPACE  pause", x, y, DIM)
         y = text(screen, self.font, "N  next track", x, y, DIM)
-        text(screen, self.font, "A  manual (arrow keys)", x, y, DIM)
+        text(screen, self.font, "A  manual (arrow keys, down = reverse)", x, y, DIM)
 
     def _graph(self, screen, x, y, w, h):
         pygame.draw.rect(screen, DIM, (x, y, w, h), 1)

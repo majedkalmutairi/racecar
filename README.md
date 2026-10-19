@@ -33,6 +33,10 @@ Every frame the mode manager reads the lidar, the pose and the speed through one
    the real car.
 5. **TRACK_CHANGED**: while racing, if more than 35 % of the beams land where the map has no wall for 2 s, throw
    away the map, the plan and the multipliers and explore again from wherever the car is.
+6. **Reverse recovery**, in every mode: if the car wants to drive but has not moved for 1 s (the reflex has parked
+   it nose-in against something), back up 0.5 m with the wheels turned away from the way out, then try again.
+   The lidar cannot see straight behind, so the back-up is checked against the map built so far. Three tries at
+   the same spot, then it stops and reports STUCK instead of sitting there forever.
 
 A box that is on the track during the explore lap is just more wall: it ends up in the map and the plan goes
 around it. A box dropped after planning is caught by the reflex, mapped while racing, and the plan is rebuilt
@@ -60,12 +64,29 @@ learns the new track.
 
 More numbers, the multiplier plots and the obstacle runs: [docs/results_sim.md](docs/results_sim.md).
 
+## Random tracks
+
+`--random` builds a new track from a seed and drives it. Easy tracks are a few big sweeping corners, medium ones
+are tighter and narrower, hard ones are the outline of a random blob of grid cells (L, U and S shapes, 1.0 to
+1.2 m corners, 1.2 m wide). Boxes come three ways: known before the explore lap, dropped mid-race, or a slalom.
+Every candidate is checked before it is used (corner radius, gaps between passes, room next to every box, what
+a dropped box does to the change detector, and a run of the real planner on the true walls); about a third to
+nine tenths of candidates pass, and the generator just tries the next one.
+
+![random tracks](docs/plots/bench_gallery.png)
+
+90 random tracks (30 per difficulty, 10 laps each, all three kinds of boxes) all finish without a crash, and on
+every one the best lap beats the first race lap: 41 % faster on easy, 39 % on medium, 36 % on hard. 300 larger
+tracks: also 300 of 300. With reverse recovery switched off, 49 of those 300 runs end with the car parked against
+a box or a wall (25 % of the hard ones).
+
+![improvement](docs/plots/bench_improvement.png)
+
 ## Tracks
 
-Five tracks in `tracks/`, all 1.2 to 1.4 m wide: `oval`, `hairpin` (one 1 m radius turn), `chicane` (two S-bends),
-`twisty` (a deep pocket and a diagonal, nine corners) and `snake` (four columns joined by three hairpins). New
-tracks are a list of corner points in `tools/make_tracks.py`; corners are rounded to a 1 m radius, which is about
-the tightest this car turns cleanly. On `twisty` the car goes from a 45 s explore lap to 9.7 s, on `snake` from
+Five hand-made tracks in `tools/make_tracks.py`, all 1.2 to 1.4 m wide: `oval`, `hairpin` (one 1 m radius turn),
+`chicane` (two S-bends), `twisty` (a deep pocket and a diagonal, nine corners) and `snake` (four columns joined by
+three hairpins). Corners are rounded to a 1 m radius, which is about the tightest this car turns cleanly. On `twisty` the car goes from a 45 s explore lap to 9.7 s, on `snake` from
 49 s to 10.7 s.
 
 ## Running it
@@ -75,29 +96,34 @@ python -m racer.sim.main --track oval                 # window with the dashboar
 python -m racer.sim.main --track hairpin --headless --laps 15      # no window, as fast as the CPU goes
 python -m racer.sim.main --track oval --swap-track chicane --swap-at-lap 4 --laps 10
 python -m racer.sim.main --track oval --obstacles --laps 6         # boxes from config.yaml are there from the start
-python -m racer.sim.main --track oval --drop-box 6.33 0.65 0.3 0.3 --drop-at-lap 3 --laps 8
-python -m pytest tests                                # 31 unit tests
+python -m racer.sim.main --track oval --drop-box 6.0 1.3 0.6 0.3 --drop-at-lap 3 --laps 8   # repeat --drop-box for more
+python -m racer.sim.main --random --gen-seed 7 --difficulty hard --obstacles known,drop,slalom
+python -m racer.sim.trackgen --gen-seed 7 --difficulty hard --preview   # just make the track and a picture of it
+python tools/bench_random.py --n 30                   # 90 random tracks headless, about 30 s on 24 cores
+python -m pytest tests                                # 53 unit tests
 python tools/plot_plan.py oval                        # map, centerline, racing line, speed profile of the last run
 python tools/run_experiments.py && python tools/plot_learning.py   # the plots above, a few minutes
 python tools/make_tracks.py                           # regenerate the five tracks
 ```
 
-Every number lives in [racer/config.yaml](racer/config.yaml). Runs write `logs/laps.csv`, `logs/events.csv` and
-the map, centerline, racing line, speed profile and multipliers as `logs/<track>_*.npy`.
+Every number lives in [racer/config.yaml](racer/config.yaml). Runs write `logs/laps.csv`, `logs/events.csv` (reflex,
+recover, stuck, crash, drop and swap events) and the map, centerline, racing line, speed profile and multipliers as
+`logs/<track>_*.npy`; `--log-dir` puts them somewhere else. A headless run that gets stuck exits with code 3.
 
 ## Layout
 
 ```
 racer/
   interface.py   CarInterface and the lidar beam angles
-  sim/           track from PNG, bicycle model, lidar, SimCar, main loop, overlays, gif
+  sim/           track from PNG, bicycle model, lidar, SimCar, main loop, overlays, gif,
+                 random track generator (trackgen) and its checker (trackcheck)
   mapping/       occupancy grid, centerline, change detector
   planning/      racing line, speed profile
   control/       pure pursuit
   learning/      per-section multipliers
-  safety/        the reflex
+  safety/        the reflex, reverse recovery
   modes/         explore controller, mode manager
   dashboard/     the side panel
 tests/           one file per module
-tools/           track generator, experiments, plots
+tools/           hand-made tracks, experiments, random-track benchmark, plots
 ```

@@ -23,6 +23,9 @@ class Track:
         self.px_per_m = meta.get("px_per_m", default_px_per_m)
         p = meta["start_pose"]
         self.start_pose = (p["x_m"], p["y_m"], p["yaw_rad"])
+        # generated tracks carry their own boxes (see racer/sim/trackgen.py)
+        self.boxes_known = meta.get("boxes_known", []) + meta.get("slalom", [])
+        self.boxes_drop = [(d["box"], d["at_lap"]) for d in meta.get("boxes_drop", [])]
 
         self.surface = image
         self._converted = False
@@ -45,6 +48,10 @@ class Track:
         """Paint a black box into the wall mask so the lidar and the crash check both see it."""
         left, bottom = self.world_to_px(x_m, y_m)
         right, top = self.world_to_px(x_m + w_m, y_m + h_m)
+        left, right = max(left, 0), min(right, self.w_px)        # clip, or numpy would wrap negative rows
+        top, bottom = max(top, 0), min(bottom, self.h_px)
+        if left >= right or top >= bottom:
+            return
         self.wall[top:bottom, left:right] = True
         pygame.draw.rect(self.surface, (0, 0, 0), (left, top, right - left, bottom - top))
 

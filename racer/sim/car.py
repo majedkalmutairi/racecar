@@ -21,6 +21,7 @@ class Car:
         self.v = 0.0
         self.L = c["wheelbase_m"]
         self.max_speed = c["max_speed_mps"]
+        self.max_reverse = c["max_reverse_mps"]
         self.max_steer = c["max_steer_rad"]
         self.max_accel = c["max_accel"]
         self.max_brake = c["max_brake"]
@@ -31,16 +32,18 @@ class Car:
     def step(self, accel_cmd, steer_cmd, dt):
         steer = clamp(steer_cmd, -self.max_steer, self.max_steer)
         accel = clamp(accel_cmd, -self.max_brake, self.max_accel)
-        if accel == 0.0:
-            accel = -self.friction
 
         self.x += self.v * math.cos(self.yaw) * dt
         self.y += self.v * math.sin(self.yaw) * dt
         self.yaw += self.v / self.L * math.tan(steer) * dt
         self.yaw = (self.yaw + math.pi) % (2 * math.pi) - math.pi
-        self.v += accel * dt
+        if accel == 0.0:
+            # rolling with no command: friction slows the car to a stop, never past it
+            self.v -= math.copysign(min(abs(self.v), self.friction * dt), self.v)
+        else:
+            self.v += accel * dt
 
-        self.v = clamp(self.v, 0.0, self.max_speed)
+        self.v = clamp(self.v, -self.max_reverse, self.max_speed)
 
     def pose(self):
         return self.x, self.y, self.yaw
