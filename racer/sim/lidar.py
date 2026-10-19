@@ -6,6 +6,7 @@ import pygame
 from racer.interface import beam_angles
 
 BEAM_COLOUR = (0, 140, 220)
+CHUNK = 100  # samples per march step (2 m at 2 cm)
 
 
 class Lidar:
@@ -16,18 +17,30 @@ class Lidar:
         self.noise = lid["noise_m"]
         self.angles = beam_angles(cfg)
         self.rng = np.random.default_rng(seed)
+        # sample distances 0, step, 2*step, ... added up one at a time like a loop would
+        n = int(self.max_range / self.step) + 2
+        d = np.add.accumulate(np.full(n, float(self.step)))
+        d = np.concatenate(([0.0], d))
+        self.d = d[d < self.max_range]
 
     def scan(self, track, x, y, yaw):
+        # all beams march together, a chunk of samples at a time; beams that hit drop out
+        c = np.array([math.cos(yaw + a) for a in self.angles])
+        s = np.array([math.sin(yaw + a) for a in self.angles])
         ranges = np.full(len(self.angles), self.max_range)
-        for i, a in enumerate(self.angles):
-            theta = yaw + a
-            c, s = math.cos(theta), math.sin(theta)
-            d = 0.0
-            while d < self.max_range:
-                if track.is_wall(x + d * c, y + d * s):
-                    break
-                d += self.step
-            ranges[i] = min(d, self.max_range)
+        todo = np.arange(len(self.angles))
+        for i in range(0, len(self.d), CHUNK):
+            d = self.d[i:i + CHUNK]
+            col = ((x + d * c[todo, None]) * track.px_per_m).astype(int)  # truncates like int()
+            row = (track.h_px - (y + d * s[todo, None]) * track.px_per_m).astype(int)
+            inside = (col >= 0) & (col < track.w_px) & (row >= 0) & (row < track.h_px)
+            hit = ~inside
+            hit[inside] = track.wall[row[inside], col[inside]]
+            done = hit.any(axis=1)
+            ranges[todo[done]] = d[hit[done].argmax(axis=1)]
+            todo = todo[~done]
+            if len(todo) == 0:
+                break
 
         hit = ranges < self.max_range
         ranges[hit] += self.rng.normal(0.0, self.noise, int(hit.sum()))
