@@ -23,23 +23,22 @@ Every frame the mode manager reads the lidar, the pose and the speed through one
    the centerline. Then solve for the racing line that bends least while keeping 0.35 m from every wall and box
    (one bounded least-squares problem), and build a speed profile from grip with `v = sqrt(grip * R)`. Braking and
    accelerating only get the grip a corner leaves over (friction ellipse).
-3. RACE: pure pursuit on the racing line. The lookahead shrinks in bends so the car cuts a corner by at most 10 cm,
-   and the planned speed is commanded a moment early to make up for the speed controller's lag. The line is cut into
-   60 sections. Each one has a speed multiplier, which stands for the grip that section trusts and is rebuilt into
-   the speed profile every lap, plus a confidence: its clean laps in a row. Multipliers start at 0.6. A clean lap
-   raises a section by 5 % times its confidence, at most 15 % a lap. A problem (the car slid, left the line by more
-   than 0.12 m, the reflex had to brake, or it crashed) lowers it by 10 %, or 25 % for a crash, resets the
-   confidence and records that speed as a ceiling. The section then stays just under the ceiling and tries 6 % past
-   it after two clean laps. A slide shows up when the turn rate in the pose is lower than the steering asked for,
-   which an IMU can measure on the real car too.
-4. Safety reflex, in every mode, after the controller. While the car follows its plan, the reflex runs pure pursuit
+3. RACE: pure pursuit on the racing line. In bends the lookahead shrinks so the car cuts a corner by at most 10 cm,
+   and it asks for the planned speed a moment early because the speed controller lags.
+4. Learning, after every race lap. The line is cut into 60 sections, each with a speed multiplier (the grip that
+   section trusts, rebuilt into the speed profile) and a confidence, which is its clean laps in a row. Multipliers
+   start at 0.6. A clean lap raises a section by 5 % times its confidence, up to 15 %. If the car slid there, left
+   the line by more than 0.12 m or needed the reflex, the section drops 10 % (25 % after a crash), its confidence
+   resets, and that speed becomes a ceiling it stays just under, trying 6 % past it after two clean laps. The car
+   spots a slide when it turns less than its steering asked for; on the real car the IMU can measure the same thing.
+5. Safety reflex, in every mode, after the controller. While the car follows its plan, the reflex runs pure pursuit
    forward on the bicycle model to see where the car will really go. If a lidar hit lies on that path less than
    0.6 s away, it slows down to keep it 0.6 s away. Off the plan it predicts the shape the body sweeps along the
    current steering arc instead, and if that path is blocked it heads for the widest gap. This is the part that
    becomes a C++ node on the real car.
-5. TRACK_CHANGED: while racing, if more than 35 % of the beams land where the map has no wall for 2 s, the car throws
+6. TRACK_CHANGED: while racing, if more than 35 % of the beams land where the map has no wall for 2 s, the car throws
    away the map, the plan and the multipliers and explores again from wherever it is.
-6. Reverse recovery, in every mode: if the car wants to drive but has not moved for 1 s (usually because the reflex
+7. Reverse recovery, in every mode: if the car wants to drive but has not moved for 1 s (usually because the reflex
    parked it nose-in against something), it backs up 0.5 m with the wheels turned away from the way out and tries
    again. The lidar cannot see straight behind, so each back-up is checked against the map built so far. After
    three tries at the same spot it stops and reports STUCK.
@@ -77,8 +76,8 @@ More numbers, the multiplier plots and the obstacle runs are in [docs/results_si
 
 ## Reading the dashboard
 
-The window shows the track on the left and a panel on the right. The panel only reads the car's state; nothing in it
-feeds back into how the car drives.
+The window shows the track on the left and a panel on the right. The panel reads the car's state and never changes
+how it drives.
 
 - Track: the racing line is coloured by planned speed, blue for slow and red for fast. Press C to colour it by the
   grip each section trusts, or by its confidence. The thin blue line is the centerline, the white line is where the
@@ -91,7 +90,7 @@ feeds back into how the car drives.
 - What it has learned: one bar per section of the line. Height is the grip that section trusts in m/s², colour is how
   sure it is (clean laps in a row), and a white tick marks where it last had trouble. Small boxes are straights,
   where speed never tests the grip. "Trouble at ... g" is the median grip at which corners last slid, left the line
-  or made the reflex brake, so it is the limit the car has measured.
+  or made the reflex brake.
 - Safety: whether the reflex is braking, how long until something on the checked path would be hit, and counts of
   reflex events, back-ups and crashes.
 - Debug, toggled with D: tracking error, lookahead distance, whether the reflex is checking the planned path or the
