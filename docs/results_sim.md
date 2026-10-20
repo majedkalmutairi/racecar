@@ -8,9 +8,9 @@ The sim car has a grip limit (8 m/s², about 0.8 g): a corner taken too fast mak
 accelerating uses up some of that grip. The racing line is a minimum-curvature line, the speed profile is built
 from grip with a friction ellipse, and each section learns its own grip, starting from a cautious guess.
 
-## Learning (15 laps, 3 seeds)
+## Learning (15 laps, 3 seeds, all seven tracks)
 
-Lap 1 is the explore lap (60 to 65 s on the 25 x 17.5 m tracks). Lap 2 is the first race lap at 60 % of the planned speed
+Lap 1 is the explore lap (60 to 122 s). Lap 2 is the first race lap at 60 % of the planned speed
 profile. Every section then has a **confidence**: its clean laps in a row. Each clean lap pushes the section up by
 5 % times its confidence (5, 10, then 15 % a lap). A problem (the car slid, left the line by more than 0.12 m, or
 the safety reflex had to brake) backs the section off 10 %, resets its confidence and remembers the multiplier it
@@ -20,18 +20,36 @@ after every lap.
 
 | track   | first race lap [s] | best lap [s] | laps to within 5 % of best | mean multiplier at lap 15 | lap 15 vs first race lap |
 |---------|-------------------:|-------------:|---------------------------:|--------------------------:|-------------------------:|
-| oval    | 12.76 | 6.78 | 7 | 1.73 | 46 % faster |
-| hairpin | 16.12 | 7.20 | 7 | 1.71 | 55 % faster |
-| chicane | 14.45 | 7.52 | 7 | 1.73 | 47 % faster |
+| oval     | 12.76 |  6.78 | 7 | 1.73 | 46 % faster |
+| hairpin  | 16.12 |  7.20 | 7 | 1.71 | 55 % faster |
+| chicane  | 14.45 |  7.52 | 7 | 1.73 | 47 % faster |
+| twisty   | 25.51 | 12.11 | 7 | 1.82 | 52 % faster |
+| snake    | 26.30 | 12.88 | 7 | 1.91 | 50 % faster |
+| speedway | 20.89 |  9.98 | 7 | 1.88 | 52 % faster |
+| circuit  | 42.38 | 19.51 | 7 | 1.71 | 53 % faster |
 
 These are the tracks drawn 2.5 times bigger (see "Bigger tracks" at the end). On the old small versions they ended at
 4.16, 4.44 and 4.69 s, and before 2026-10-19 at 6.17, 6.69 and 6.92 s (a 1.1 multiplier cap, a 3 m/s² plan, and a
 reflex that braked for walls the plan never went near). On the long straights the limit is now how fast the car can get and still brake for the next corner (top speed
 12 m/s since 2026-10-21, reached nowhere); the corners settle at the grip limit.
 
+![all tracks](plots/laptime_all_tracks.png)
+
 ![oval](plots/laptime_vs_lap_oval.png) ![hairpin](plots/laptime_vs_lap_hairpin.png) ![chicane](plots/laptime_vs_lap_chicane.png)
+![twisty](plots/laptime_vs_lap_twisty.png) ![snake](plots/laptime_vs_lap_snake.png) ![speedway](plots/laptime_vs_lap_speedway.png)
+![circuit](plots/laptime_vs_lap_circuit.png)
 
 ![oval multipliers](plots/multipliers_oval.png) ![hairpin multipliers](plots/multipliers_hairpin.png) ![chicane multipliers](plots/multipliers_chicane.png)
+![twisty multipliers](plots/multipliers_twisty.png) ![snake multipliers](plots/multipliers_snake.png) ![speedway multipliers](plots/multipliers_speedway.png)
+![circuit multipliers](plots/multipliers_circuit.png)
+
+The map, centerline, racing line (coloured by learned speed) and speed profile of every track after 15 laps
+(`python tools/plot_plan.py <track> logs/exp/<track>_seed0`):
+
+![oval plan](plots/plan_oval.png) ![hairpin plan](plots/plan_hairpin.png)
+![chicane plan](plots/plan_chicane.png) ![twisty plan](plots/plan_twisty.png)
+![snake plan](plots/plan_snake.png) ![speedway plan](plots/plan_speedway.png)
+![circuit plan](plots/plan_circuit.png)
 
 ## Track change (oval to chicane at lap 8)
 
@@ -68,7 +86,7 @@ tracks' obstacle runs are at the end.)
 
 ## Safety events
 
-8 reflex episodes over all 10 runs, 6 of them in the first race lap. While the car is on its plan the reflex checks the
+20 reflex episodes over all 22 runs (7 tracks x 3 seeds + the swap), 18 of them in the first race lap. While the car is on its plan the reflex checks the
 path pure pursuit will really drive (the controller run forward on the bicycle model, corner cutting included)
 against the live scan, and only brakes for something on that path; off the plan it falls back to the arc check.
 Each episode marks its section as a problem, so the multiplier backs off.

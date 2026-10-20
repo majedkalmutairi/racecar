@@ -1,7 +1,7 @@
 """Turn the CSVs from tools/run_experiments.py into the learning plots for the README.
 
 Run from the repo root:  python tools/plot_learning.py
-Writes docs/plots/laptime_vs_lap_<track>.png, multipliers_<track>.png, track_change.png
+Writes docs/plots/laptime_vs_lap_<track>.png, multipliers_<track>.png, laptime_all_tracks.png, track_change.png
 and prints the numbers for docs/results_sim.md.
 """
 import csv
@@ -15,7 +15,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 EXP = ROOT / "logs/exp"
 PLOTS = ROOT / "docs/plots"
-TRACKS = ["oval", "hairpin", "chicane"]
+TRACKS = ["oval", "hairpin", "chicane", "twisty", "snake", "speedway", "circuit"]
 SEEDS = [0, 1, 2]
 
 
@@ -61,7 +61,9 @@ def plot_laptime_vs_lap(track):
 
 
 def plot_multipliers(track):
-    mults = np.vstack([np.load(EXP / f"{track}_seed{s}_mult.npy") for s in SEEDS])
+    runs = [np.load(EXP / f"{track}_seed{s}_mult.npy") for s in SEEDS]
+    n = min(len(m) for m in runs)          # lidar noise can change the lap length, and so the section count, by one
+    mults = np.vstack([np.interp(np.linspace(0, 1, n), np.linspace(0, 1, len(m)), m) for m in runs])
     sections = np.arange(len(mults[0]))
     mean = mults.mean(axis=0)
     plt.figure(figsize=(6, 4))
@@ -73,6 +75,27 @@ def plot_multipliers(track):
     plt.legend()
     savefig(f"multipliers_{track}.png")
     return mults
+
+
+def plot_all_tracks(all_times):
+    """Every track on one chart: mean lap time over the 3 seeds, and the same as a share of the first race lap."""
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11, 4))
+    for track, times in all_times.items():
+        mean = times.mean(axis=0)
+        laps = np.arange(2, len(mean) + 2)
+        ax.plot(laps, mean, marker="o", ms=3, label=track)
+        ax2.plot(laps, 100 * mean / mean[0], marker="o", ms=3, label=track)
+    ax.set_ylabel("lap time [s]")
+    ax.set_title("lap time while learning (mean of 3 seeds)")
+    ax2.set_ylabel("% of the first race lap")
+    ax2.set_title("the same, relative to the first race lap")
+    for a in (ax, ax2):
+        a.set_xlabel("lap (lap 1 is the explore lap)")
+        a.grid(True, alpha=0.3)
+    ax.set_ylim(0, None)
+    ax2.set_ylim(0, 105)
+    ax.legend(fontsize=8)
+    savefig("laptime_all_tracks.png")
 
 
 def plot_track_change():
@@ -106,10 +129,13 @@ def summary(track, times, mults):
 def main():
     lines = ["| track | first race lap [s] | best lap [s] | laps to within 5 % of best | mean multiplier at lap 15 | lap 15 vs first race lap |",
              "|---|---|---|---|---|---|"]
+    all_times = {}
     for track in TRACKS:
         times = plot_laptime_vs_lap(track)
         mults = plot_multipliers(track)
         lines.append(summary(track, times, mults))
+        all_times[track] = times
+    plot_all_tracks(all_times)
     rows = plot_track_change()
     swap = next(i for i, r in enumerate(rows) if r["track"] != "oval")
     print()
