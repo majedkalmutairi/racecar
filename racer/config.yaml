@@ -10,7 +10,7 @@ sim:
   swap_margin_m: 0.3  # a track swap waits until the new walls are at least this far from the car
 car:
   wheelbase_m: 0.33
-  max_speed_mps: 8
+  max_speed_mps: 12   # stopping from 12 m/s at 6 m/s² takes 12 m, the lidar's range
   max_reverse_mps: 0.5  # reverse is only used to back out of a dead end
   max_steer_rad: 0.4
   max_accel: 6         # brushless motor, m/s^2

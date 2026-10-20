@@ -59,31 +59,32 @@ run on the car with a `RosCar` behind the interface.
 
 The tracks are now as big as a 12 m lidar sensibly allows: 25 x 17.5 m and 30 x 20 m, laps of 49 to 101 m, and
 widths that change along the lap between about 1 and 3 m. The sim car has a grip limit of about 0.8 g and a top
-speed of 8 m/s, so the speed it learns is the speed its tyres and motor allow.
+speed of 12 m/s (stopping from 12 m/s takes 12 m, the lidar's range), so the speed it learns is the speed its tyres
+allow.
 
 15 laps, three lidar-noise seeds per track, and lap 1 is the explore lap. No run crashed.
 
 | track   | explore lap | first race lap | lap 15 |
 |---------|------------:|---------------:|-------:|
-| oval    | 60 s | 12.8 s | 7.2 s |
-| hairpin | 60 s | 16.1 s | 7.4 s |
-| chicane | 65 s | 14.5 s | 7.9 s |
+| oval    | 60 s | 12.8 s | 6.9 s |
+| hairpin | 60 s | 16.1 s | 7.3 s |
+| chicane | 65 s | 14.5 s | 7.7 s |
 
 ![oval learning curve](docs/plots/laptime_vs_lap_oval.png)
 
 30 laps on every hand-made track, then again with a box on each one from the start, plus a box dropped mid-race and
-a track swap. None of the 16 runs crashed or got stuck, and the car is at its 8 m/s top speed on the straights by lap
-10:
+a track swap. None of the 16 runs crashed or got stuck. By lap 10 the car reaches 10 to 10.6 m/s on the straights,
+which is as fast as it can get and still brake for the next corner at 6 m/s²:
 
 | track    | lap      | explore lap | first race lap | best lap |
 |----------|---------:|------------:|---------------:|---------:|
-| oval     |   52 m   |  60 s |  12.8 s |  7.1 s |
-| hairpin  |   49 m   |  60 s |  16.1 s |  7.3 s |
-| chicane  |   53 m   |  65 s |  14.5 s |  7.7 s |
-| twisty   |   71 m   |  85 s |  25.5 s | 11.9 s |
-| snake    |   73 m   |  88 s |  26.4 s | 12.9 s |
-| speedway |   70 m   |  82 s |  20.9 s | 10.3 s |
-| circuit  |  101 m   | 122 s |  42.4 s | 19.4 s |
+| oval     |   52 m   |  60 s |  12.8 s |  6.8 s |
+| hairpin  |   49 m   |  60 s |  16.1 s |  7.1 s |
+| chicane  |   53 m   |  65 s |  14.5 s |  7.4 s |
+| twisty   |   71 m   |  85 s |  25.5 s | 11.7 s |
+| snake    |   73 m   |  88 s |  26.4 s | 12.7 s |
+| speedway |   70 m   |  82 s |  20.9 s |  9.9 s |
+| circuit  |  101 m   | 122 s |  42.4 s | 19.1 s |
 
 When the oval is swapped for the chicane under the car at lap 8, it notices the mismatch within 2 s, explores again
 and learns the new track.
@@ -137,7 +138,7 @@ tenths of candidates pass, and the generator just tries the next one.
 | large  |     90 |       90 |       0 |
 | xl     |     60 |       57 |       0 |
 
-On every track it finished, the best lap is faster than the first race lap, by 44 to 48 % on average. The four that
+On every track it finished, the best lap is faster than the first race lap, by 45 to 48 % on average. The four that
 did not finish all stopped on the slow first lap, where the car reached the corner of a slalom box at a slight angle
 and could not back out of it in three tries.
 

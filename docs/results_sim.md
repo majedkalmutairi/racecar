@@ -20,14 +20,14 @@ after every lap.
 
 | track   | first race lap [s] | best lap [s] | laps to within 5 % of best | mean multiplier at lap 15 | lap 15 vs first race lap |
 |---------|-------------------:|-------------:|---------------------------:|--------------------------:|-------------------------:|
-| oval    | 12.76 | 7.02 | 6 | 1.84 | 44 % faster |
-| hairpin | 16.12 | 7.31 | 7 | 1.72 | 54 % faster |
-| chicane | 14.45 | 7.67 | 7 | 1.73 | 45 % faster |
+| oval    | 12.76 | 6.78 | 7 | 1.73 | 46 % faster |
+| hairpin | 16.12 | 7.20 | 7 | 1.71 | 55 % faster |
+| chicane | 14.45 | 7.52 | 7 | 1.73 | 47 % faster |
 
 These are the tracks drawn 2.5 times bigger (see "Bigger tracks" at the end). On the old small versions they ended at
 4.16, 4.44 and 4.69 s, and before 2026-10-19 at 6.17, 6.69 and 6.92 s (a 1.1 multiplier cap, a 3 m/s² plan, and a
-reflex that braked for walls the plan never went near). The oval's long sides learn up to 2.5x and are then limited
-by the car's 8 m/s top speed; its ends, like the tight parts of the other tracks, settle at the grip limit.
+reflex that braked for walls the plan never went near). On the long straights the limit is now how fast the car can get and still brake for the next corner (top speed
+12 m/s since 2026-10-21, reached nowhere); the corners settle at the grip limit.
 
 ![oval](plots/laptime_vs_lap_oval.png) ![hairpin](plots/laptime_vs_lap_hairpin.png) ![chicane](plots/laptime_vs_lap_chicane.png)
 
@@ -37,10 +37,10 @@ by the car's 8 m/s top speed; its ends, like the tight parts of the other tracks
 
 The chicane PNG replaces the oval under the car while it is racing. Nothing is told to the car.
 
-- last oval race lap 7.23 s, swap, map mismatch jumps from 0.00 to about 0.9
+- last oval race lap 7.07 s, swap, map mismatch jumps from 0.00 to about 0.9
 - the car slows to explore speed while the mismatch is above 0.35 and resets 2.0 s after the swap
   (`RACE -> TRACK_CHANGED -> EXPLORE`), deleting map, plan and multipliers
-- explore lap on the chicane 64.3 s, first chicane race lap 19.3 s, best chicane lap after 7 race laps 9.2 s
+- explore lap on the chicane 64.2 s, first chicane race lap 19.1 s, best chicane lap after 7 race laps 9.0 s
 - the swap waits until the car is 0.3 m clear of the new track's walls (`sim.swap_margin_m`; it was 0.4, which the
   minimum-curvature line on the oval never offered, so the swap silently never happened)
 
@@ -216,15 +216,19 @@ chicane at lap 8 (best lap, s; no crash and no stuck run in any of the 16):
 
 | track | lap | explore lap | first race lap | best | with a box |
 |---|---|---|---|---|---|
-| oval | 52 m | 60.4 | 12.8 | 7.07 | 7.02 |
-| hairpin | 49 m | 59.5 | 16.1 | 7.25 | 7.30 |
-| chicane | 53 m | 64.5 | 14.5 | 7.65 | 7.82 |
-| twisty | 71 m | 84.9 | 25.5 | 11.85 | 12.22 |
-| snake | 73 m | 88.2 | 26.4 | 12.85 | 12.87 |
-| speedway | 70 m | 82.1 | 20.9 | 10.28 | 10.47 |
-| circuit | 101 m | 122.3 | 42.4 | 19.42 | 19.63 |
+| oval | 52 m | 60.4 | 12.8 | 6.77 | 6.85 |
+| hairpin | 49 m | 59.5 | 16.1 | 7.05 | 7.15 |
+| chicane | 53 m | 64.5 | 14.5 | 7.42 | 7.58 |
+| twisty | 71 m | 84.9 | 25.5 | 11.70 | 12.03 |
+| snake | 73 m | 88.2 | 26.4 | 12.65 | 12.87 |
+| speedway | 70 m | 82.1 | 20.9 | 9.95 | 10.37 |
+| circuit | 101 m | 122.3 | 42.4 | 19.07 | 19.45 |
 
-By lap 10 the car hits its 8 m/s top speed on the straights of every track (checked on oval, speedway and circuit).
+With the old 8 m/s top speed the car hit it on every track by lap 10 (best laps 7.07 / 7.25 / 7.65 / 11.85 / 12.85 /
+10.28 / 19.42 s). With 12 m/s (2026-10-21) it peaks at 10.0 to 10.6 m/s on oval, speedway and circuit: the straights
+are too short to go faster and still brake for the next corner at 6 m/s². The best laps above got 1 to 3 % faster,
+with no new reflex event or crash. Stopping from 12 m/s at 6 m/s² takes 12 m, the lidar's range, which is why it
+stops there.
 
 What the bigger tracks broke, and the fixes:
 
@@ -249,7 +253,7 @@ Random tracks, 10 laps each, all three kinds of boxes:
 |---|---|---|---|---|
 | medium (10 x 7 m) | 90 | 89 | 0 | 46 % faster |
 | large (10 x 10 m) | 90 | 90 | 0 | 45 to 47 % faster |
-| xl (30 x 20 m) | 60 | 57 | 0 | 44 to 47 % faster |
+| xl (30 x 20 m) | 60 | 57 | 0 | 45 to 48 % faster |
 
 The four that did not finish all stopped on the explore lap: the car reached the corner of a slalom box at a slight
 angle, nose within a few centimetres of it, and three back-ups at the same spot did not get it out. Before the fixes
