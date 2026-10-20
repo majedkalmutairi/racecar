@@ -18,14 +18,19 @@ real car. The simulator part is done (below). I'm ordering the parts for the car
 Every frame the mode manager reads the lidar, the pose and the speed through one small interface
 (`CarInterface`: `get_scan`, `get_pose`, `get_speed`, `set_drive`) and decides what to do.
 
-1. EXPLORE: drive at 0.8 m/s, stay centred between the walls, and count every lidar hit into an occupancy grid.
-2. PLAN, once the car is back at its start: slide the explore path onto the ridge of the distance transform to get
-   the centerline. Then solve for the racing line that bends least while keeping 0.35 m from every wall and box
+1. EXPLORE: drive at 0.8 m/s and count every lidar hit into an occupancy grid. On a narrow track the car stays
+   centred between the walls. Where the track is wide, it follows the gap: every near edge in the scan is widened by
+   half the car, and it aims at the deepest direction left. A box in its path with room on both sides gets the
+   smallest sidestep that clears it, and the car never picks a turn that would swing its side into something. A lap
+   ends when the car crosses a finish line drawn through its start, so a wide line round the start still counts.
+2. PLAN, once the lap is done: slide the explore path toward the middle of the track (the ridge of the distance
+   transform) to get the centerline. Every point moves only inside its own free stretch and neighbours are pulled
+   together, so near a box the centerline ramps round it instead of stepping. Then solve for the racing line that bends least while keeping 0.35 m from every wall and box
    (one bounded least-squares problem), and build a speed profile from grip with `v = sqrt(grip * R)`. Braking and
    accelerating only get the grip a corner leaves over (friction ellipse).
 3. RACE: pure pursuit on the racing line. In bends the lookahead shrinks so the car cuts a corner by at most 10 cm,
    and it asks for the planned speed a moment early because the speed controller lags.
-4. Learning, after every race lap. The line is cut into 60 sections, each with a speed multiplier (the grip that
+4. Learning, after every race lap. The line is cut into sections about 0.4 m long (at least 60), each with a speed multiplier (the grip that
    section trusts, rebuilt into the speed profile) and a confidence, which is its clean laps in a row. Multipliers
    start at 0.6. A clean lap raises a section by 5 % times its confidence, up to 15 %. If the car slid there, left
    the line by more than 0.12 m or needed the reflex, the section drops 10 % (25 % after a crash), its confidence
@@ -44,28 +49,41 @@ Every frame the mode manager reads the lidar, the pose and the speed through one
    three tries at the same spot it stops and reports STUCK.
 
 A box that is on the track during the explore lap is just more wall: it ends up in the map and the plan goes around
-it. A box dropped after planning is caught by the reflex, mapped while racing, and the plan is rebuilt around it a few
-frames later.
+it. A box dropped after planning is caught by the reflex and mapped while racing, and within a second the racing line
+is rebuilt to go round one side of it. The centerline stays as it was.
 
 Nothing in `racer/mapping`, `planning`, `control`, `learning`, `safety` or `modes` imports pygame, so the same code will
 run on the car with a `RosCar` behind the interface.
 
 ## Results (simulation)
 
-15 laps, three lidar-noise seeds per track, and lap 1 is the explore lap. No run crashed. The sim car has a grip limit
-of about 0.8 g, so the speed it learns is the speed its tyres allow.
+The tracks are now as big as a 12 m lidar sensibly allows: 25 x 17.5 m and 30 x 20 m, laps of 49 to 101 m, and
+widths that change along the lap between about 1 and 3 m. The sim car has a grip limit of about 0.8 g and a top
+speed of 8 m/s, so the speed it learns is the speed its tyres and motor allow.
+
+15 laps, three lidar-noise seeds per track, and lap 1 is the explore lap. No run crashed.
 
 | track   | explore lap | first race lap | lap 15 |
 |---------|------------:|---------------:|-------:|
-| oval    | 26 s | 8.0 s | 4.2 s |
-| hairpin | 29 s | 8.5 s | 4.5 s |
-| chicane | 28 s | 9.7 s | 4.8 s |
+| oval    | 60 s | 12.8 s | 7.2 s |
+| hairpin | 60 s | 16.1 s | 7.4 s |
+| chicane | 65 s | 14.5 s | 7.9 s |
 
 ![oval learning curve](docs/plots/laptime_vs_lap_oval.png)
 
-Every track ends within 0 to 1.4 % of the fastest lap its racing line allows at that grip. One long run on a random
-hard track went 473 laps without a crash: 12.4 s on the first race lap, 6.6 s by lap 8, then between 6.2 and 6.4 s
-for the remaining 460 or so laps.
+30 laps on every hand-made track, then again with a box on each one from the start, plus a box dropped mid-race and
+a track swap. None of the 16 runs crashed or got stuck, and the car is at its 8 m/s top speed on the straights by lap
+10:
+
+| track    | lap      | explore lap | first race lap | best lap |
+|----------|---------:|------------:|---------------:|---------:|
+| oval     |   52 m   |  60 s |  12.8 s |  7.1 s |
+| hairpin  |   49 m   |  60 s |  16.1 s |  7.3 s |
+| chicane  |   53 m   |  65 s |  14.5 s |  7.7 s |
+| twisty   |   71 m   |  85 s |  25.5 s | 11.9 s |
+| snake    |   73 m   |  88 s |  26.4 s | 12.9 s |
+| speedway |   70 m   |  82 s |  20.9 s | 10.3 s |
+| circuit  |  101 m   | 122 s |  42.4 s | 19.4 s |
 
 When the oval is swapped for the chicane under the car at lap 8, it notices the mismatch within 2 s, explores again
 and learns the new track.
@@ -101,8 +119,9 @@ how it drives.
 
 `--random` builds a new track from a seed and drives it. Easy tracks have a few big sweeping corners, and medium ones
 are tighter and narrower. Hard ones follow the outline of a random blob of grid cells, which gives L, U and S shapes
-with 1.0 to 1.2 m corners on a 1.2 m wide track. Boxes come three ways: placed before the explore lap, dropped
-mid-race, or set out as a slalom.
+with 1.0 to 1.2 m corners. The width wanders along the lap: 1.0 to 2.0 m on hard tracks, up to 3.0 m on easy ones.
+There are four sizes, from 8 x 6 m up to `xl` at 30 x 20 m (laps of 50 to 90 m). Boxes come three ways: placed
+before the explore lap, dropped mid-race (only once the car could still stop for them), or set out as a slalom.
 
 Every candidate track is checked before it is used: corner radius, gaps between passes, room next to every box, what
 a dropped box does to the change detector, and a run of the real planner on the true walls. Between a third and nine
@@ -110,19 +129,28 @@ tenths of candidates pass, and the generator just tries the next one.
 
 ![random tracks](docs/plots/bench_gallery.png)
 
-90 random tracks (30 per difficulty, 10 laps each, all three kinds of boxes) all finish without a crash, and on
-every one the best lap is 45 to 47 % faster than the first race lap. Of 300 larger tracks, 299 finish and none
-crash. With reverse recovery switched off, 53 of those 300 runs end with the car parked against a box or a wall,
-including 30 % of the hard ones.
+10 laps on each track, all three kinds of boxes:
+
+| size   | tracks | finished | crashes |
+|--------|-------:|---------:|--------:|
+| medium |     90 |       89 |       0 |
+| large  |     90 |       90 |       0 |
+| xl     |     60 |       57 |       0 |
+
+On every track it finished, the best lap is faster than the first race lap, by 44 to 48 % on average. The four that
+did not finish all stopped on the slow first lap, where the car reached the corner of a slalom box at a slight angle
+and could not back out of it in three tries.
 
 ![improvement](docs/plots/bench_improvement.png)
 
 ## Tracks
 
-Five hand-made tracks live in `tools/make_tracks.py`, all 1.2 to 1.4 m wide: `oval`, `hairpin` (one 1 m radius turn),
-`chicane` (two S-bends), `twisty` (a deep pocket and a diagonal, nine corners) and `snake` (four columns joined by
-three hairpins). Corners are rounded to a 1 m radius, about the tightest this car turns cleanly. On `twisty` the car
-goes from a 45 s explore lap to 6.45 s, and on `snake` from 50 s to 7.0 s.
+Seven hand-made tracks live in `tools/make_tracks.py`. The original five (`oval`, `hairpin`, `chicane`, `twisty`,
+`snake`) are drawn 2.5 times bigger than they used to be, on 25 x 17.5 m. `speedway` (30 x 20 m) has two long
+straights and a V in the middle, and `circuit` (30 x 20 m, 101 m) has sixteen corners, from hairpins to fast sweepers.
+Every track's width changes along the lap.
+
+![tracks](docs/plots/tracks.png)
 
 ## Running it
 
@@ -131,14 +159,16 @@ python -m racer.sim.main --track oval                 # window with the dashboar
 python -m racer.sim.main --track hairpin --headless --laps 15      # no window, as fast as the CPU goes
 python -m racer.sim.main --track oval --swap-track chicane --swap-at-lap 4 --laps 10
 python -m racer.sim.main --track oval --obstacles --laps 6         # boxes from config.yaml are there from the start
-python -m racer.sim.main --track oval --drop-box 6.0 1.3 0.6 0.3 --drop-at-lap 3 --laps 8   # repeat --drop-box for more
+python -m racer.sim.main --track oval --drop-box 13.0 14.4 0.6 0.3 --drop-at-lap 3 --laps 8   # repeat --drop-box for more
 python -m racer.sim.main --random --gen-seed 7 --difficulty hard --obstacles known,drop,slalom
+python -m racer.sim.main --random --gen-seed 3 --size xl --obstacles known,slalom   # a 30 x 20 m one
 python -m racer.sim.trackgen --gen-seed 7 --difficulty hard --preview   # just make the track and a picture of it
-python tools/bench_random.py --n 30                   # 90 random tracks headless, about 30 s on 24 cores
-python -m pytest tests                                # 63 unit tests
+python tools/bench_random.py --n 30                   # 90 random tracks headless, a few minutes on 24 cores
+python tools/bench_random.py --n 20 --size xl --max-s 1500   # 60 of the biggest ones
+python -m pytest tests                                # 72 unit tests
 python tools/plot_plan.py oval                        # map, centerline, racing line, speed profile of the last run
 python tools/run_experiments.py && python tools/plot_learning.py   # the plots above, a few minutes
-python tools/make_tracks.py                           # regenerate the five tracks
+python tools/make_tracks.py --plot                    # regenerate the seven tracks and their picture
 ```
 
 Every number lives in [racer/config.yaml](racer/config.yaml). A run writes `logs/laps.csv`, `logs/events.csv`

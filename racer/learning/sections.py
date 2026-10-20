@@ -13,7 +13,8 @@ class SectionLearner:
 
     def __init__(self, n_points, cfg, path):
         lr = cfg["learning"]
-        self.n_sections = lr["n_sections"]
+        lap_m = n_points * cfg["plan"]["ds_m"]
+        self.n_sections = max(lr["n_sections"], int(round(lap_m / lr["section_m"])))
         self.up = lr["up"]
         self.up_max = lr["up_max"]
         self.down = lr["down"]

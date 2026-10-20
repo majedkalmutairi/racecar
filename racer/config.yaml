@@ -28,8 +28,20 @@ lidar:
   noise_m: 0.01       # gaussian range noise, 1 sigma
   draw_beams: true
 explore:
+  method: auto        # auto = centre on narrow track, follow the gap where it is wide; or always "centre" / "gap"
+  wide_m: 2.0         # auto: left + right side-beam ranges above this count as wide...
+  block_m: 2.0        # ...or the straight path the car body would sweep is blocked closer than this
   speed_mps: 0.8      # first-lap speed, never above 1 m/s
-  steer_k: 0.6        # steer = steer_k * (left - right)
+  gap_margin_m: 0.2   # gap: a near edge is widened by half the car plus this
+  disparity_m: 0.3    # gap: a jump in range bigger than this is an edge
+  gap_fov_rad: 1.57   # gap: only directions within +-90 deg count
+  gap_aim_max_m: 2.0  # gap: steer as if the aim point were at most this far (closer = sharper)
+  sidestep_margin_m: 0.2   # box in the way: shift sideways until half the car plus this clears it (reflex: 0.1)...
+  sidestep_past_m: 0.6     # ...from here to this far past its front face...
+  sidestep_max_m: 1.5      # ...looking at most this far to each side
+  arc_clear_m: 1.0    # take the nearest steer whose arc is free this far (the reflex's body check)
+  steer_k: 0.6        # steer = steer_k * ref_width_m * (left - right) / (left + right)
+  ref_width_m: 1.5    # left + right on the 1.2-1.4 m tracks the gain was tuned on
   side_beams: 5       # beams averaged around +side_angle and -side_angle
   side_angle_rad: 1.2 # +-69 deg: looking a bit ahead damps the weave (+-90 deg crashed)
   front_slow_m: 1.5   # slow down when the front beam is shorter than this
@@ -38,19 +50,23 @@ explore:
   avoid_m: 1.2        # ...when they are closer than this
   avoid_k: 0.6
 laps:
-  radius_m: 0.5       # a lap ends when the car re-enters this circle around the start
+  gate_half_m: 1.6    # a lap ends when the car crosses the finish line (through the start, this far to each side)
   min_lap_s: 3        # ...and at least this long after the last lap
   min_lap_m: 5        # ...and after driving at least this far (backing up near the start is not a lap)
   csv_path: logs/laps.csv
 mapping:
-  size_m: 20          # grid covers -10..+10 m in x and y
+  size_m: 64          # grid covers -32..+32 m in x and y (the biggest tracks are 30 x 20 m)
   res_m: 0.05         # one cell = 5 cm
   min_hits: 3         # a cell is a wall once this many beams ended in it
   map_dir: logs
 plan:
   ds_m: 0.1           # spacing of centerline and racing-line points
   snap_search_m: 1.0  # how far sideways a path point may slide to reach the ridge
+  room_search_m: 1.0  # how far sideways the racing line looks for room
+  seam_m: 2.0         # the explore path's last metres before the start are dropped (see build_centerline)
   snap_iters: 3
+  snap_smooth_w: 20.0 # snapping: how hard neighbouring points are pulled together (about w * ds_m metres)
+  loop_max_m: 4.0     # a centerline crossing itself within this distance is a knot from snapping: cut out
   center_smooth_iters: 10
   margin_m: 0.3       # racing line keeps this far from the wall: half the car plus more than the reflex margin
   wall_clear_m: 0.35  # the racing line never comes closer than this to any mapped wall or box: half the car + 0.2 m for tracking error
@@ -66,7 +82,7 @@ plan:
   kappa_eps: 1.0e-3   # straight = curvature below this
   curv_span_m: 0.6    # the speed profile reads curvature over this length of line
   replan_cells: 5     # this many new wall cells away from the known walls while racing = new obstacle, replan
-  replan_cooldown_s: 3.0
+  replan_cooldown_s: 1.0
 race:
   ld_k: 0.4           # lookahead = ld_k * speed, clipped to [ld_min, ld_max]
   ld_min_m: 0.5
@@ -79,7 +95,8 @@ race:
   trust_heading_rad: 0.4  # ...and pointing along it
   trust_horizon_m: 1.0    # line checked this far beyond the stopping distance
 learning:
-  n_sections: 60
+  n_sections: 60      # at least this many sections...
+  section_m: 0.4      # ...or one every this many metres on long laps
   start_mult: 0.6     # first race lap runs at 60 % of the speed profile
   up: 0.05            # clean section: multiplier * (1 + up * clean laps in a row)...
   up_max: 0.15        # ...but never more than this in one lap
@@ -132,19 +149,25 @@ track_change:
   hold_s: 2.0         # ...for this long before the map is thrown away
   cell_tol: 2         # a beam "hits the map" if a wall cell is within this many cells
 obstacles:            # known boxes per track: [x, y, w, h] in metres, used with --obstacles
-  # each one >= 2.5 m from the start and leaves >= 0.85 m to the other wall
-  oval: [[5.0, 5.35, 0.3, 0.3]]
-  hairpin: [[0.3, 3.35, 0.3, 0.3]]
-  chicane: [[0.25, 3.35, 0.3, 0.3]]
-  twisty: [[9.3, 3.4, 0.3, 0.3]]
-  snake: [[0.4, 3.5, 0.3, 0.3]]
+  # each one on a straight, >= 2.5 m from the start, leaving >= 1 m (or the width minus 0.3 m) to the other wall
+  oval: [[12.476, 2.195, 0.3, 0.3]]
+  hairpin: [[15.479, 5.786, 0.3, 0.3]]
+  chicane: [[15.241, 12.048, 0.3, 0.3]]
+  twisty: [[16.393, 12.317, 0.3, 0.3]]
+  snake: [[7.409, 6.777, 0.3, 0.3]]
+  speedway: [[19.831, 2.966, 0.3, 0.3]]
+  circuit: [[21.35, 16.759, 0.3, 0.3]]
 trackgen:             # random tracks: racer/sim/trackgen.py makes them, racer/sim/trackcheck.py rejects bad ones
-  sizes: {small: [8, 6], medium: [10, 7], large: [10, 10]}   # metres; the map grid only covers 10 x 10
+  sizes: {small: [8, 6], medium: [10, 7], large: [10, 10], xl: [30, 20]}   # metres
+  big_side_m: 12        # an area with a side longer than this is "big":
+  big_px_per_m: 50      # ...drawn at 2 cm per pixel instead of 1 cm, to stay quick
+  big_cell_scale: 2.5   # ...and grid tracks mix cells up to this many times longer (long straights)
+  width_every_m: [4, 10]  # the track width changes smoothly between new random values this far apart
   border_m: 0.3         # wall kept around the image edge
   min_radius_m: 1.0     # tightest centreline corner (the car turns no tighter than 0.78 m)
   wall_gap_m: 0.2       # wall left between two passes of the corridor
   start_clear_m: 1.0    # no other part of the loop this close to the start (lap counter)
-  lap_m: [10, 40]
+  lap_m: [10, 400]
   straight_kappa: 0.05  # curvature below this counts as straight
   slalom_kappa: 0.5     # a slalom may sit on a bend gentler than this (radius > 2 m)
   max_tries: 300
@@ -157,20 +180,24 @@ trackgen:             # random tracks: racer/sim/trackgen.py makes them, racer/s
   slalom_spacing_m: [1.8, 2.5]
   slalom_drop: false    # true: slalom boxes appear mid-race instead of being there from the start
   drop_from_lap: 3      # first dropped box appears after this many laps, then one per lap
-  drop_clear_m: 1.5     # a dropped box waits until the car is at least this far away
+  drop_clear_m: 1.5     # a dropped box waits until the car is this far away plus its braking distance and 1 s
   drop_mismatch_max: 0.25  # dropped boxes may hide at most this fraction of the beams (change detector: 0.35)
   line_radius_factor: 1.2  # the planned line must be this much rounder than the car's tightest turn
   line_clear_m: 0.25    # planned line at least this far from any wall or box (half the car + reflex margin)
   difficulty:           # star = a few big sweeping corners; grid = the outline of a random blob of cells
+                        # width_m = range the width wanders in (big_width_m on big areas);
                         # reach = how far out toward the edge a star corner goes; cell_m = distance between
                         # neighbouring passes, cells = fraction of the grid in the blob
-    easy:   {shape: star, corners: [4, 5], reach: [0.75, 1.0], radius_m: [1.8, 2.5], width_m: [1.5, 1.5],
+    easy:   {shape: star, corners: [4, 5], reach: [0.75, 1.0], radius_m: [1.8, 2.5], width_m: [1.5, 2.0], big_width_m: [1.5, 3.0],
              known: [1, 1], drop: [1, 1], slalom: [2, 2], gap_m: 1.0}
-    medium: {shape: star, corners: [5, 7], reach: [0.55, 1.0], radius_m: [1.2, 1.8], width_m: [1.3, 1.5],
+    medium: {shape: star, corners: [5, 7], reach: [0.55, 1.0], radius_m: [1.2, 1.8], width_m: [1.2, 1.6], big_width_m: [1.2, 2.5],
              known: [1, 2], drop: [1, 1], slalom: [2, 3], gap_m: 0.9}
     hard:   {shape: grid, cell_m: [2.2, 2.6], cells: [0.6, 0.9], jitter: 0.1, radius_m: [1.0, 1.2],
-             width_m: [1.2, 1.3], known: [1, 3], drop: [1, 2], slalom: [2, 3], gap_m: 0.85}
+             width_m: [1.0, 1.4], big_width_m: [1.0, 2.0], known: [1, 3], drop: [1, 2], slalom: [2, 3],
+             gap_m: 0.85}
 dashboard:
   panel_w: 400
+  track_max_px: [1500, 950]   # the track view is shrunk to fit this (screen minus panel and taskbar)
+  max_px_per_m: 100           # ...and never drawn bigger than this
   corner_kappa: 0.3   # a section with a bend tighter than 1 / this (3.3 m radius) counts as a corner
   graph_len: 200

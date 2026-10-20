@@ -26,14 +26,28 @@ MODES = ("known", "drop", "slalom")
 
 
 def corridor(draw, points_m, width_m, h_px, px_per_m=PX_PER_M):
-    """Paint a white band of constant width along a closed centreline (list of (x, y) in metres)."""
-    r = width_m / 2 * px_per_m
+    """Paint a white band along a closed centreline (list of (x, y) in metres). width_m is one width or one per point."""
+    widths = np.broadcast_to(np.asarray(width_m, float), (len(points_m),))
     pts = list(points_m) + [points_m[0]]
-    for (x0, y0), (x1, y1) in zip(pts[:-1], pts[1:]):
+    for k, ((x0, y0), (x1, y1)) in enumerate(zip(pts[:-1], pts[1:])):
+        w0, w1 = widths[k], widths[(k + 1) % len(widths)]
         n = max(1, int(math.hypot(x1 - x0, y1 - y0) / 0.02))     # a disc every 2 cm
         for t in np.linspace(0, 1, n, endpoint=False):
+            r = (w0 + t * (w1 - w0)) / 2 * px_per_m
             cx, cy = (x0 + t * (x1 - x0)) * px_per_m, h_px - (y0 + t * (y1 - y0)) * px_per_m
             draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill="white")
+
+
+def width_profile(rng, n, ds, lo, hi, every_m):
+    """A width for every point of a closed loop: random values between lo and hi every few metres, joined by
+    smooth (cosine) blends, so the track gets wide and narrow stretches instead of one width all round."""
+    lap = n * ds
+    k = max(int(lap / rng.uniform(*every_m)), 2)
+    values = rng.uniform(lo, hi, k)
+    s = np.arange(n) * ds / lap * k
+    i = s.astype(int) % k
+    f = (1 - np.cos(np.pi * (s - np.floor(s)))) / 2
+    return values[i] * (1 - f) + values[(i + 1) % k] * f
 
 
 def arc(cx, cy, r, a0, a1, n=200):
@@ -82,7 +96,7 @@ def rounded(corners, r, step_m=None, max_frac=0.45):
 class Layout:
     name: str
     size_m: tuple
-    width_m: float
+    widths: np.ndarray            # track width at every centreline point
     centre: np.ndarray            # closed centreline, ds_m apart, in driving order
     radii: list                   # effective radius of every rounded corner
     start_pose: tuple
@@ -90,10 +104,15 @@ class Layout:
     boxes_drop: list = field(default_factory=list)    # ([x, y, w, h], at_lap)
     slalom: list = field(default_factory=list)        # [x, y, w, h], known at start unless slalom_drop
     info: dict = field(default_factory=dict)
+    px_per_m: int = PX_PER_M      # big areas use fewer pixels per metre to stay quick
 
     @property
     def px(self):
-        return int(round(self.size_m[0] * PX_PER_M)), int(round(self.size_m[1] * PX_PER_M))
+        return int(round(self.size_m[0] * self.px_per_m)), int(round(self.size_m[1] * self.px_per_m))
+
+    @property
+    def width_m(self):
+        return float(np.mean(self.widths))
 
     def all_boxes(self):
         return self.boxes_known + self.slalom + [b for b, _ in self.boxes_drop]
@@ -103,10 +122,10 @@ def render(layout, boxes=()):
     """Layout -> wall mask [row, col], True = wall, same pixel rules as Track."""
     w_px, h_px = layout.px
     img = Image.new("RGB", (w_px, h_px), "black")
-    corridor(ImageDraw.Draw(img), [tuple(p) for p in layout.centre], layout.width_m, h_px)
+    corridor(ImageDraw.Draw(img), [tuple(p) for p in layout.centre], layout.widths, h_px, layout.px_per_m)
     wall = np.asarray(img)[:, :, 0] < 128
     for box in boxes:
-        paint_box(wall, box)
+        paint_box(wall, box, layout.px_per_m)
     return wall
 
 
@@ -138,7 +157,7 @@ def star_corners(rng, n, lo, hi, reach_range):
 def lattice(rng, lo, hi, cell):
     """Grid lines from lo to hi with random spacings in [cell[0], cell[1]], placed at a random offset."""
     span = hi - lo
-    n = int(span // cell[0])
+    n = int(span // ((cell[0] + cell[1]) / 2))
     if n < 1:
         return None
     gaps = rng.uniform(cell[0], cell[1], n)
@@ -196,9 +215,11 @@ def outline(cells, xs, ys):
     return corners
 
 
-def grid_corners(rng, d, lo, hi, width, wall_gap):
-    """Medium/hard tracks: the outline of a random blob of cells, corners nudged so it is not all right angles."""
-    xs, ys = lattice(rng, lo[0], hi[0], d["cell_m"]), lattice(rng, lo[1], hi[1], d["cell_m"])
+def grid_corners(rng, d, lo, hi, width, wall_gap, cell_scale=1.0):
+    """Medium/hard tracks: the outline of a random blob of cells, corners nudged so it is not all right angles.
+    cell_scale stretches the biggest cell for big areas: tight U-turns and long straights in one track."""
+    cell = (d["cell_m"][0], d["cell_m"][1] * cell_scale)
+    xs, ys = lattice(rng, lo[0], hi[0], cell), lattice(rng, lo[1], hi[1], cell)
     if xs is None or ys is None:
         return None
     nx, ny = len(xs) - 1, len(ys) - 1
@@ -266,13 +287,14 @@ def candidate(rng, seed, difficulty, size, size_m, modes, cfg):
     g = cfg["trackgen"]
     d = g["difficulty"][difficulty]
     ds = cfg["plan"]["ds_m"]
-    width = round(float(rng.uniform(*d["width_m"])), 2)
-    inset = g["border_m"] + width / 2
+    big = max(size_m) > g["big_side_m"]
+    w_lo, w_hi = d["big_width_m"] if big else d["width_m"]     # a wide track only fits in a big area
+    inset = g["border_m"] + w_hi / 2
     lo, hi = np.array([inset, inset]), np.array(size_m) - inset
     if d["shape"] == "star":
         corners = star_corners(rng, int(rng.integers(d["corners"][0], d["corners"][1] + 1)), lo, hi, d["reach"])
     else:
-        corners = grid_corners(rng, d, lo, hi, width, g["wall_gap_m"])
+        corners = grid_corners(rng, d, lo, hi, w_hi, g["wall_gap_m"], g["big_cell_scale"] if big else 1.0)
     if not corners or len(corners) < 3:
         return None
     n = len(corners)
@@ -293,10 +315,13 @@ def candidate(rng, seed, difficulty, size, size_m, modes, cfg):
     t = xy[1] - xy[-1]
     start = (round(float(xy[0, 0]), 3), round(float(xy[0, 1]), 3), round(math.atan2(t[1], t[0]), 4))
 
+    widths = width_profile(rng, len(xy), ds, w_lo, w_hi, g["width_every_m"])
     name = f"gen_{difficulty}_{size}_{seed}" + ("_" + "".join(m[0] for m in modes) if modes else "")
-    layout = Layout(name, size_m, width, xy, [float(c[1]) for c in arcs], start,
+    layout = Layout(name, size_m, widths, xy, [float(c[1]) for c in arcs], start,
                     info={"difficulty": difficulty, "size": size, "gen_seed": seed, "modes": list(modes),
-                          "corners": n, "lap_m": round(len(xy) * ds, 1)})
+                          "corners": n, "lap_m": round(len(xy) * ds, 1),
+                          "width_range_m": [round(float(widths.min()), 2), round(float(widths.max()), 2)]},
+                    px_per_m=g["big_px_per_m"] if big else PX_PER_M)
     add_obstacles(layout, rng, modes, d, cfg)
     return layout
 
@@ -305,7 +330,7 @@ def add_obstacles(layout, rng, modes, d, cfg):
     """Pick box spots along the centreline: away from the start, off tight corners, spaced out."""
     g = cfg["trackgen"]
     ds = cfg["plan"]["ds_m"]
-    xy, width = layout.centre, layout.width_m
+    xy, widths = layout.centre, layout.widths
     nrm = normals(xy)
     n = len(xy)
     kappa = np.abs(curvature(xy))
@@ -319,8 +344,8 @@ def add_obstacles(layout, rng, modes, d, cfg):
     def free(i):
         return all(min(abs(i - j), n - abs(i - j)) * ds >= g["box_spacing_m"] for j in taken)
 
-    def gap():
-        return float(min(rng.uniform(d["gap_m"], d["gap_m"] + 0.15), width - 0.1))
+    def gap(i):
+        return float(min(rng.uniform(d["gap_m"], d["gap_m"] + 0.15), widths[i] - 0.1))
 
     def size():
         return [round(float(rng.uniform(lo, hi)), 2) for lo, hi in zip(g["box_m"], g["box_m_max"])]
@@ -339,7 +364,7 @@ def add_obstacles(layout, rng, modes, d, cfg):
             first = ok[int(rng.integers(len(ok)))]
             idx = [(first + j * step) % n for j in range(k)]
             side = 1 if rng.random() < 0.5 else -1
-            boxes = [place_box(xy, nrm, i, side * (-1) ** j, width, gap(), size()) for j, i in enumerate(idx)]
+            boxes = [place_box(xy, nrm, i, side * (-1) ** j, widths[i], gap(i), size()) for j, i in enumerate(idx)]
             taken += idx
             if g["slalom_drop"]:
                 layout.boxes_drop += [(b, g["drop_from_lap"]) for b in boxes]
@@ -359,7 +384,7 @@ def add_obstacles(layout, rng, modes, d, cfg):
         if i is None:
             continue
         taken.append(i)
-        box = place_box(xy, nrm, i, 1 if rng.random() < 0.5 else -1, width, gap(), size())
+        box = place_box(xy, nrm, i, 1 if rng.random() < 0.5 else -1, widths[i], gap(i), size())
         if kind == "known":
             layout.boxes_known.append(box)
         else:
@@ -375,7 +400,7 @@ def save(layout, tracks_dir=TRACKS_DIR):
     img = Image.fromarray(np.where(render(layout)[:, :, None], 0, 255).astype(np.uint8).repeat(3, axis=2))
     img.save(tracks_dir / f"{layout.name}.png")
     x, y, yaw = layout.start_pose
-    meta = {"start_pose": {"x_m": x, "y_m": y, "yaw_rad": yaw}, "px_per_m": PX_PER_M,
+    meta = {"start_pose": {"x_m": x, "y_m": y, "yaw_rad": yaw}, "px_per_m": layout.px_per_m,
             "boxes_known": layout.boxes_known,
             "boxes_drop": [{"box": b, "at_lap": lap} for b, lap in layout.boxes_drop],
             "slalom": layout.slalom,
@@ -444,8 +469,8 @@ def main():
     p = argparse.ArgumentParser(description="generate a random track")
     p.add_argument("--gen-seed", type=int, default=0)
     p.add_argument("--difficulty", default="medium", choices=["easy", "medium", "hard"])
-    p.add_argument("--size", default="medium", choices=["small", "medium", "large"])
-    p.add_argument("--size-m", type=float, nargs=2, metavar=("W", "H"), help="overrides --size, at most 10 x 10")
+    p.add_argument("--size", default="medium", choices=["small", "medium", "large", "xl"])
+    p.add_argument("--size-m", type=float, nargs=2, metavar=("W", "H"), help="overrides --size, at most 30 x 20")
     p.add_argument("--obstacles", default="", help="comma list of known, drop, slalom")
     p.add_argument("--preview", action="store_true", help="also write docs/plots/gen_preview_<name>.png")
     args = p.parse_args()

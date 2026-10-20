@@ -46,7 +46,7 @@ class SimCar(CarInterface):
 
     @property
     def size_px(self):
-        return self.track.w_px, self.track.h_px
+        return self.track.screen_size
 
     def swap_track(self, track):
         """Replace the track under the car; the car keeps its pose."""

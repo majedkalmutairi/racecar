@@ -27,7 +27,9 @@ class TrackView:
     def draw(self, screen):
         if self.surface is None or self.track.wall_version != self.walls_seen:
             rgb = np.where(self.track.wall[:, :, None], OUTSIDE, ASPHALT).astype(np.uint8)
-            self.surface = pygame.surfarray.make_surface(rgb.transpose(1, 0, 2)).convert()
+            full = pygame.surfarray.make_surface(rgb.transpose(1, 0, 2))
+            size = self.track.screen_size
+            self.surface = (full if full.get_size() == size else pygame.transform.smoothscale(full, size)).convert()
             self.walls_seen = self.track.wall_version
         screen.blit(self.surface, (0, 0))
 
@@ -39,7 +41,7 @@ class MapOverlay:
         self.track = track
         self.min_hits = min_hits
         self.refresh_s = refresh_s
-        self.surface = pygame.Surface((track.w_px, track.h_px))
+        self.surface = pygame.Surface(track.screen_size)
         self.surface.set_colorkey((0, 0, 0))
         self.next_refresh = 0.0
 
@@ -48,7 +50,7 @@ class MapOverlay:
         rows, cols = np.nonzero(grid.occupied(self.min_hits))
         xs, ys = grid.cell_to_world(rows, cols)
         for x, y in zip(xs, ys):
-            px, py = self.track.world_to_px(x, y)
+            px, py = self.track.to_screen(x, y)
             pygame.draw.rect(self.surface, MAP_COLOUR, (px - 1, py - 1, 2, 2))
 
     def draw(self, screen, grid, t, growing):
@@ -66,7 +68,7 @@ class Trail:
         self.points = deque(maxlen=length)
 
     def add(self, track, x, y):
-        self.points.append(track.world_to_px(x, y))
+        self.points.append(track.to_screen(x, y))
 
     def draw(self, screen):
         if len(self.points) > 1:
@@ -74,12 +76,12 @@ class Trail:
 
 
 def draw_loop(screen, track, points, colour, width=1):
-    pts = [track.world_to_px(x, y) for x, y in points]
+    pts = [track.to_screen(x, y) for x, y in points]
     pygame.draw.lines(screen, colour, True, pts, width)
 
 
 def draw_coloured_loop(screen, track, points, colours, width=4):
-    pts = [track.world_to_px(x, y) for x, y in points]
+    pts = [track.to_screen(x, y) for x, y in points]
     for i in range(len(pts)):
         pygame.draw.line(screen, colours[i], pts[i], pts[(i + 1) % len(pts)], width)
 
@@ -124,6 +126,6 @@ def draw_plan(screen, track, state, view, font):
             draw_coloured_loop(screen, track, state["line"], colours)
             draw_legend(screen, font, 12, 10, label + "   (C changes)", lo, hi)
     if state["ahead"] is not None and len(state["ahead"]) > 1:
-        pygame.draw.lines(screen, AHEAD_COLOUR, False, [track.world_to_px(x, y) for x, y in state["ahead"]], 2)
+        pygame.draw.lines(screen, AHEAD_COLOUR, False, [track.to_screen(x, y) for x, y in state["ahead"]], 2)
     if state["lookahead"] is not None:
-        pygame.draw.circle(screen, LOOKAHEAD_COLOUR, track.world_to_px(*state["lookahead"]), 4)
+        pygame.draw.circle(screen, LOOKAHEAD_COLOUR, track.to_screen(*state["lookahead"]), 4)

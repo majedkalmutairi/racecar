@@ -30,6 +30,22 @@ class Track:
         self.surface = image
         self._converted = False
         self.wall_version = 0          # bumped whenever a box changes the walls, so views know to repaint
+        self.view_px_per_m = self.px_per_m   # drawing scale; fit_view shrinks it so big tracks fit the screen
+
+    def fit_view(self, max_w_px, max_h_px, max_px_per_m):
+        """Pick the drawing scale: as large as allowed, but the whole track must fit max_w_px x max_h_px."""
+        w_m, h_m = self.w_px / self.px_per_m, self.h_px / self.px_per_m
+        self.view_px_per_m = min(max_px_per_m, max_w_px / w_m, max_h_px / h_m)
+
+    @property
+    def screen_size(self):
+        return (int(round(self.w_px / self.px_per_m * self.view_px_per_m)),
+                int(round(self.h_px / self.px_per_m * self.view_px_per_m)))
+
+    def to_screen(self, x_m, y_m):
+        """World metres -> window pixels (drawing only; physics uses world_to_px)."""
+        s = self.view_px_per_m
+        return int(x_m * s), int(self.h_px / self.px_per_m * s - y_m * s)
 
     def world_to_px(self, x_m, y_m):
         col = int(x_m * self.px_per_m)

@@ -78,8 +78,12 @@ class SafetyReflex:
         return float(max(s[nearest[on_line]].min() - self.nose, 0.0))
 
     def roomiest_steer(self, scan):
-        room = [self.path_clearance(scan, s) for s in self.steer_options]
-        return float(self.steer_options[int(np.argmax(room))])
+        """The steer with the most room ahead. On a tie (often: none has any) the one turning hardest away from
+        the nearest hit, so a car still rolling to a stop does not swing its nose into it."""
+        room = np.array([self.path_clearance(scan, s) for s in self.steer_options])
+        away = -np.sign(self.angles[int(np.argmin(np.where(self.fwd, scan, np.inf)))])
+        best = np.flatnonzero(room >= room.max() - 1e-9)
+        return float(self.steer_options[best[np.argmax(away * self.steer_options[best])]])
 
     def escape_steer(self, scan):
         """Follow the gap: blank the beams around the nearest hit, find the widest run of open beams, aim at its middle."""
@@ -129,6 +133,10 @@ class SafetyReflex:
         if clearance < self.escape_clear_m:
             steer = self.escape_steer(scan)
             clearance = self.path_clearance(scan, steer)
+            if clearance < self.stop_clear_m:          # the gap is there but this arc still hits: take the roomiest arc
+                roomy = self.roomiest_steer(scan)
+                if self.path_clearance(scan, roomy) >= clearance:
+                    steer, clearance = roomy, self.path_clearance(scan, roomy)
             speed = min(speed, self.escape_speed)
         speed = min(speed, clearance / self.ttc_s) if clearance >= self.stop_clear_m else self.brake_speed
         return (speed, steer), True

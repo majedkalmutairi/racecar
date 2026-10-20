@@ -28,21 +28,56 @@ def smoothed_line(center, width, cfg):
 
 def sideways_room(ref, nrm, dist, grid, clear, reach=1.0):
     """How far every point may move left (hi) and right (lo) along its normal and still be `clear` from every
-    mapped wall or box. Only the free stretch the point is in counts, so it never jumps into the next corridor."""
+    mapped wall or box. Only the free stretch the point is in counts, so it never jumps into the next corridor.
+
+    A stretch of points that is itself too close to something (a box dropped onto the line after the map was made)
+    gets the free room beside it instead, all on the same side, so the line goes round one side of the box."""
     offsets = np.arange(-reach, reach + 1e-9, grid.res / 2)
     k0 = len(offsets) // 2
     pts = ref[:, None, :] + offsets[None, :, None] * nrm[:, None, :]
     row, col = grid.world_to_cell(pts[..., 0], pts[..., 1])
-    ok = dist[row, col] >= clear
+    d = dist[row, col]
+    ok = d >= clear
+    start = np.full(len(ref), k0)
+    for run in runs(~ok[:, k0]):
+        sides = {step: [first_free(ok[i], d[i] <= 0, k0, step) for i in run] for step in (1, -1)}
+        # the side where more of the stretch has room, and then the nearer room
+        step = max(sides, key=lambda s: (sum(j is not None for j in sides[s]),
+                                         -sum(abs(j - k0) for j in sides[s] if j is not None)))
+        for i, j in zip(run, sides[step]):
+            if j is not None:
+                start[i] = j
     lo, hi = np.zeros(len(ref)), np.zeros(len(ref))
-    for i in np.flatnonzero(ok[:, k0]):          # a point already too close to a wall stays where it is
-        a = b = k0
+    for i in np.flatnonzero(ok[np.arange(len(ref)), start]):     # no room on either side: the point stays put
+        a = b = start[i]
         while a > 0 and ok[i, a - 1]:
             a -= 1
         while b < len(offsets) - 1 and ok[i, b + 1]:
             b += 1
         lo[i], hi[i] = offsets[a], offsets[b]
     return lo, hi
+
+
+def runs(mask):
+    """The stretches of a closed loop where mask is True, as index arrays."""
+    if not mask.any() or mask.all():
+        return []
+    idx = np.roll(np.arange(len(mask)), -int(np.argmin(mask)))     # start the loop on a False point
+    edges = np.flatnonzero(np.diff(np.r_[0, mask[idx].astype(int), 0]))
+    return [idx[a:b] for a, b in zip(edges[::2], edges[1::2])]
+
+
+def first_free(ok, wall, k0, step):
+    """Index of the first ok cell going from k0 in direction step (+1 left, -1 right), or None. It may leave the
+    box the point is in, but never crosses a wall: beyond one lies the next corridor or the unmapped outside."""
+    j = k0
+    while 0 <= j < len(ok) and wall[j]:
+        j += step
+    while 0 <= j < len(ok) and not wall[j]:
+        if ok[j]:
+            return j
+        j += step
+    return None
 
 
 def solve_offsets(ref, nrm, lo, hi, length_w):
@@ -76,7 +111,8 @@ def min_curvature_line(center, grid, cfg):
     for _ in range(plan["mincurv_iters"]):
         ref = resample(line, plan["mincurv_step_m"])
         nrm = normals(ref)
-        lo, hi = sideways_room(ref, nrm, dist, grid, plan["wall_clear_m"] + plan["mincurv_buffer_m"])
+        lo, hi = sideways_room(ref, nrm, dist, grid, plan["wall_clear_m"] + plan["mincurv_buffer_m"],
+                               plan["room_search_m"])
         line = ref + nrm * solve_offsets(ref, nrm, lo, hi, plan["mincurv_length_w"])[:, None]
     return resample(line, plan["ds_m"])
 

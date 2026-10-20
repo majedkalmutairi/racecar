@@ -10,21 +10,22 @@ from grip with a friction ellipse, and each section learns its own grip, startin
 
 ## Learning (15 laps, 3 seeds)
 
-Lap 1 is the explore lap (26 to 29 s on every track). Lap 2 is the first race lap at 60 % of the planned speed
+Lap 1 is the explore lap (60 to 65 s on the 25 x 17.5 m tracks). Lap 2 is the first race lap at 60 % of the planned speed
 profile. Every section then has a **confidence**: its clean laps in a row. Each clean lap pushes the section up by
 5 % times its confidence (5, 10, then 15 % a lap). A problem (the car slid, left the line by more than 0.12 m, or
 the safety reflex had to brake) backs the section off 10 %, resets its confidence and remembers the multiplier it
-happened at as a ceiling; the section climbs back to just under it and tries 4 % past it after three clean laps.
+happened at as a ceiling; the section climbs back to just under it and tries 6 % past it after two clean laps.
 The multiplier m stands for the section's grip, 6 m/s² x m², and the speed profile is rebuilt from those grips
 after every lap.
 
 | track   | first race lap [s] | best lap [s] | laps to within 5 % of best | mean multiplier at lap 15 | lap 15 vs first race lap |
 |---------|-------------------:|-------------:|---------------------------:|--------------------------:|-------------------------:|
-| oval    | 7.95 | 4.16 | 7 | 1.38 | 47 % faster |
-| hairpin | 8.51 | 4.44 | 7 | 1.79 | 47 % faster |
-| chicane | 9.71 | 4.69 | 8 | 1.57 | 51 % faster |
+| oval    | 12.76 | 7.02 | 6 | 1.84 | 44 % faster |
+| hairpin | 16.12 | 7.31 | 7 | 1.72 | 54 % faster |
+| chicane | 14.45 | 7.67 | 7 | 1.73 | 45 % faster |
 
-Before 2026-10-19 the same tracks ended at 6.17, 6.69 and 6.92 s (a 1.1 multiplier cap, a 3 m/s² plan, and a
+These are the tracks drawn 2.5 times bigger (see "Bigger tracks" at the end). On the old small versions they ended at
+4.16, 4.44 and 4.69 s, and before 2026-10-19 at 6.17, 6.69 and 6.92 s (a 1.1 multiplier cap, a 3 m/s² plan, and a
 reflex that braked for walls the plan never went near). The oval's long sides learn up to 2.5x and are then limited
 by the car's 8 m/s top speed; its ends, like the tight parts of the other tracks, settle at the grip limit.
 
@@ -36,16 +37,19 @@ by the car's 8 m/s top speed; its ends, like the tight parts of the other tracks
 
 The chicane PNG replaces the oval under the car while it is racing. Nothing is told to the car.
 
-- last oval race lap 4.15 s, swap, map mismatch jumps from 0.00 to about 0.9
+- last oval race lap 7.23 s, swap, map mismatch jumps from 0.00 to about 0.9
 - the car slows to explore speed while the mismatch is above 0.35 and resets 2.0 s after the swap
   (`RACE -> TRACK_CHANGED -> EXPLORE`), deleting map, plan and multipliers
-- explore lap on the chicane 28.3 s, first chicane race lap 8.63 s, best chicane lap after 7 race laps 4.65 s
+- explore lap on the chicane 64.3 s, first chicane race lap 19.3 s, best chicane lap after 7 race laps 9.2 s
 - the swap waits until the car is 0.3 m clear of the new track's walls (`sim.swap_margin_m`; it was 0.4, which the
   minimum-curvature line on the oval never offered, so the swap silently never happened)
 
 ![track change](plots/track_change.png)
 
 ## Obstacles
+
+(Measured on the small tracks, before 2026-10-20; the box positions have moved with the bigger tracks. The bigger
+tracks' obstacle runs are at the end.)
 
 - **Known boxes** (`--obstacles`, one 0.3 m box per track from `config.yaml`, there before the explore lap): the box
   ends up in the occupancy grid like any wall and the centerline and racing line route around it, keeping at least
@@ -64,7 +68,7 @@ The chicane PNG replaces the oval under the car while it is racing. Nothing is t
 
 ## Safety events
 
-10 reflex episodes over all 10 runs, 3 of them in the first race lap. While the car is on its plan the reflex checks the
+8 reflex episodes over all 10 runs, 6 of them in the first race lap. While the car is on its plan the reflex checks the
 path pure pursuit will really drive (the controller run forward on the bicycle model, corner cutting included)
 against the live scan, and only brakes for something on that path; off the plan it falls back to the arc check.
 Each episode marks its section as a problem, so the multiplier backs off.
@@ -164,6 +168,8 @@ never puts a box closer than 0.85 m to the far wall.
 
 ## Random tracks
 
+(Small and medium areas, before 2026-10-20. The numbers for the bigger areas are at the end.)
+
 `python tools/bench_random.py --n 30` generates 30 tracks per difficulty (10 x 7 m area, known, dropped and slalom
 boxes) and drives each for 10 laps headless, in parallel, each run in its own log folder.
 
@@ -177,10 +183,6 @@ No crash, no false track change, and the best lap beats the first race lap on al
 size (10 x 10 m, seeds 100 to 199): 299 of 300 OK, no crash, one stuck for good. The same 300 with recovery
 switched off (`recovery.max_attempts: 0`): easy 97, medium 80, hard 70 OK; the other 53 park against a box or a wall.
 
-![success](plots/bench_success.png) ![improvement](plots/bench_improvement.png)
-
-![gallery](plots/bench_gallery.png)
-
 What the generator found out on the way:
 
 - A corner drawn as 12 points reads as a much tighter corner than it is once resampled, so generated arcs get a
@@ -192,3 +194,67 @@ What the generator found out on the way:
 - Asking for every kind of box on every track pushed the hard tracks toward plain rectangles (only they had room);
   boxes are now placed where they fit, and a slalom only appears where there is a long enough straight
   (most easy tracks, a few medium and hard ones).
+
+## Bigger tracks (2026-10-20)
+
+The tracks were too small to show what the car can do: the longest straight on the old oval was about 5 m. They are
+now as big as the 12 m lidar sensibly allows.
+
+- The five hand-made tracks are drawn 2.5 times bigger (25 x 17.5 m), and two new ones are 30 x 20 m: `speedway`
+  (two long straights and a V) and `circuit` (101 m, sixteen corners). Random tracks get an `xl` size, 30 x 20 m.
+  Big areas are drawn at 2 cm per pixel instead of 1 cm, and the map grid covers 64 m.
+- The width changes along every lap: new random targets every 4 to 10 m, blended smoothly, between 1.0 and 3.0 m
+  depending on difficulty. Every check that used one width (pass gaps, box room, the planner check) uses the local
+  one.
+- The window zooms to fit the track on screen.
+- Learning sections are about 0.4 m long (at least 60), so a 100 m lap gets 250 of them.
+
+![tracks](plots/tracks.png)
+
+30 laps per track, then 15 with a box on each, plus a box dropped on the oval at lap 3 and the oval swapped for the
+chicane at lap 8 (best lap, s; no crash and no stuck run in any of the 16):
+
+| track | lap | explore lap | first race lap | best | with a box |
+|---|---|---|---|---|---|
+| oval | 52 m | 60.4 | 12.8 | 7.07 | 7.02 |
+| hairpin | 49 m | 59.5 | 16.1 | 7.25 | 7.30 |
+| chicane | 53 m | 64.5 | 14.5 | 7.65 | 7.82 |
+| twisty | 71 m | 84.9 | 25.5 | 11.85 | 12.22 |
+| snake | 73 m | 88.2 | 26.4 | 12.85 | 12.87 |
+| speedway | 70 m | 82.1 | 20.9 | 10.28 | 10.47 |
+| circuit | 101 m | 122.3 | 42.4 | 19.42 | 19.63 |
+
+By lap 10 the car hits its 8 m/s top speed on the straights of every track (checked on oval, speedway and circuit).
+
+What the bigger tracks broke, and the fixes:
+
+| problem | fix |
+|---|---|
+| the lap counter wanted the car within 0.5 m of its start; on a wide track the racing line passes 1 m away | a lap is crossing a finish line through the start (1.6 m each side), forwards, after at least 3 s and 5 m |
+| explore centring swung to full lock on wide tracks and hugged a wall | centre on the relative difference, scaled to a 1.5 m track |
+| boxes in the middle of a wide track | follow the gap where the track is wider than 2 m or something is in the car's path within 2 m |
+| slaloms on the explore lap: the gap steering aimed 2 m out and turned too gently for a box 1 m ahead | aim no further than the first thing in the car's path; a box with room on both sides gets the smallest sidestep that clears it by 20 cm, aimed from the nose, kept to one side until past |
+| the car turned its side into a box corner it was passing | never pick a steer whose arc hits something within 1 m (the reflex's body check) |
+| the last metres of the explore path, after the finish line, folded back into the start | drop the path's last 2 m back into the start before building the centerline |
+| centerline knots between two close boxes, where the middle of the room jumps sideways | snap all points together: as close to the middle as possible, each inside its own free stretch, neighbours pulled together (one bounded least-squares solve); cut out any small loop left over |
+| a replan round a dropped box re-snapped the centerline through the box; the knots grew every replan, 17 km of line on an 80 m track | a replan keeps the centerline and only rebuilds the racing line; points that are now too close to something get the free room on one side, the same side for the whole stretch, never across a wall |
+| replans waited 3 s, so a box seen just after another replan was planned round too late | 1 s |
+| boxes dropped right in front of a fast car | a drop waits until the car is 1.5 m plus its braking distance plus 1 s away |
+| when every arc was blocked the reflex kept steering toward the box while the car rolled to a stop | on a tie, steer away from the nearest hit |
+| wide corners looked like two passes of the track too close together | a second pass only counts if it runs more than 120 degrees the other way |
+
+Random tracks, 10 laps each, all three kinds of boxes:
+
+| size | tracks | finished | crashes | best vs first race lap |
+|---|---|---|---|---|
+| medium (10 x 7 m) | 90 | 89 | 0 | 46 % faster |
+| large (10 x 10 m) | 90 | 90 | 0 | 45 to 47 % faster |
+| xl (30 x 20 m) | 60 | 57 | 0 | 44 to 47 % faster |
+
+The four that did not finish all stopped on the explore lap: the car reached the corner of a slalom box at a slight
+angle, nose within a few centimetres of it, and three back-ups at the same spot did not get it out. Before the fixes
+above, xl was 47 of 60 (and an earlier version 37 of 60).
+
+![success](plots/bench_success.png) ![improvement](plots/bench_improvement.png)
+
+![gallery](plots/bench_gallery.png)

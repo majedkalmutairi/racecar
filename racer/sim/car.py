@@ -61,7 +61,7 @@ class Car:
         return car_corners(self.x, self.y, self.yaw, self.length, self.width, self.L / 2)
 
     def draw(self, screen, track, colour=BODY_COLOUR):
-        points = [track.world_to_px(cx, cy) for cx, cy in self.corners()]
+        points = [track.to_screen(cx, cy) for cx, cy in self.corners()]
         pygame.draw.polygon(screen, colour, points)
         pygame.draw.polygon(screen, (20, 20, 20), points, 1)
 
@@ -69,6 +69,6 @@ class Car:
         nose = centre + self.length / 2
         cx, cy = rotate_point(centre, 0, self.yaw)
         nx, ny = rotate_point(nose, 0, self.yaw)
-        start = track.world_to_px(self.x + cx, self.y + cy)
-        end = track.world_to_px(self.x + nx, self.y + ny)
+        start = track.to_screen(self.x + cx, self.y + cy)
+        end = track.to_screen(self.x + nx, self.y + ny)
         pygame.draw.line(screen, HEADING_COLOUR, start, end, 3)

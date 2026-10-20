@@ -36,8 +36,8 @@ def parse_args():
     p.add_argument("--random", action="store_true", help="generate a new track and drive it")
     p.add_argument("--gen-seed", type=int, default=0, help="the same seed always gives the same track")
     p.add_argument("--difficulty", default="medium", choices=["easy", "medium", "hard"])
-    p.add_argument("--size", default="medium", choices=["small", "medium", "large"])
-    p.add_argument("--size-m", type=float, nargs=2, metavar=("W", "H"), help="track area in metres, at most 10 x 10")
+    p.add_argument("--size", default="medium", choices=["small", "medium", "large", "xl"])
+    p.add_argument("--size-m", type=float, nargs=2, metavar=("W", "H"), help="track area in metres, at most 30 x 20")
     p.add_argument("--drop-box", type=float, nargs=4, action="append", metavar=("X", "Y", "W", "H"),
                    help="a box in metres, repeat for more...")
     p.add_argument("--drop-at-lap", type=int, default=3, help="...dropped when this many laps are done")
@@ -69,13 +69,16 @@ def keyboard(keys, cfg):
     return speed, steer
 
 
-def drop_when_clear(drops, car, manager, t, clear_m):
-    """Drop every box whose lap has come, unless the car is so close it would land on it. Returns the rest."""
+def drop_when_clear(drops, car, manager, t, clear_m, brake):
+    """Drop every box whose lap has come, once the car is far enough away to see it and still stop: clear_m plus
+    its braking distance and one more second of driving. Returns the boxes still waiting."""
     x, y, _ = car.get_pose()
+    v = max(car.get_speed(), 0.0)
+    far_enough = clear_m + v * v / (2 * brake) + v
     left = []
     for box, at_lap in drops:
         bx, by, bw, bh = box
-        if manager.lap_total >= at_lap and math.hypot(bx + bw / 2 - x, by + bh / 2 - y) > clear_m:
+        if manager.lap_total >= at_lap and math.hypot(bx + bw / 2 - x, by + bh / 2 - y) > far_enough:
             car.track.add_box(*box)
             manager.note("drop", t)
             print(f"[sim] box dropped at {box[:2]}")
@@ -121,7 +124,13 @@ def main():
 
     pygame.init()
     headless = args.headless
+    view_cfg = cfg["dashboard"]
+
+    def fit(track):
+        track.fit_view(view_cfg["track_max_px"][0], view_cfg["track_max_px"][1], view_cfg["max_px_per_m"])
+
     if not headless:
+        fit(car.track)
         w, h = car.size_px
         screen = pygame.display.set_mode((w + cfg["dashboard"]["panel_w"], h))
         clock = pygame.time.Clock()
@@ -147,6 +156,7 @@ def main():
         around = car_corners(x, y, yaw, car.car.length + 2 * m, car.car.width + 2 * m, car.car.L / 2)
         if any(pending_track.is_wall(px, py) for px, py in around):
             return
+        fit(pending_track)
         car.swap_track(pending_track)
         for box in car.track.boxes_known:
             car.track.add_box(*box)
@@ -213,7 +223,7 @@ def main():
                     manager.note("drop", sim_t)
                     print(f"[sim] box dropped at {box[:2]}")
                 dropped = True
-            drops = drop_when_clear(drops, car, manager, sim_t, cfg["trackgen"]["drop_clear_m"])
+            drops = drop_when_clear(drops, car, manager, sim_t, cfg["trackgen"]["drop_clear_m"], cfg["plan"]["a_brake"])
             if args.laps and manager.lap_total >= args.laps:
                 running = False
             if args.max_s and sim_t >= args.max_s:
@@ -235,7 +245,8 @@ def main():
             draw_plan(screen, car.track, state, view, fonts[0])
             car.draw(screen, view["beams"])
             if state["safety_active"]:
-                pygame.draw.circle(screen, (255, 90, 90), car.track.world_to_px(x, y), 28, 2)
+                pygame.draw.circle(screen, (255, 90, 90), car.track.to_screen(x, y),
+                                   max(int(0.28 * car.track.view_px_per_m), 8), 2)
             dash.push(car.get_speed(), state["v_target"])
             dash.draw(screen, state, view)
             if gif:

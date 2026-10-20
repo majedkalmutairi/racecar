@@ -112,7 +112,8 @@ def plot_improvement(rows):
 
 def plot_gallery(args, cfg):
     modes = MODES if args.obstacles == "all" else parse_modes(args.obstacles)
-    fig, axes = plt.subplots(3, 4, figsize=(14, 3.0 * 3 * cfg["trackgen"]["sizes"][args.size][1] / 7))
+    w, h = cfg["trackgen"]["sizes"][args.size]
+    fig, axes = plt.subplots(3, 4, figsize=(14, 3 * (3.5 * h / w + 0.4)))      # each panel keeps the area's shape
     for i, lv in enumerate(LEVELS):
         for j in range(4):
             ax = axes[i, j]
@@ -144,8 +145,8 @@ def summary(rows):
         bad = {res: sum(r["result"] == res for r in mine) for res in RESULTS[1:]}
         print(f"{lv:6s}: {len(ok)}/{len(mine)} OK ({100 * len(ok) / len(mine):.0f} %), "
               f"best < first race lap on {len(faster)}/{len(ok)}, mean gain {100 * np.mean(gain or [0]):.0f} %, "
-              f"recoveries {sum(int(r['recoveries'] or 0) for r in mine)}, "
-              f"false track changes {sum(int(r['track_changed'] or 0) for r in mine)}, "
+              f"recoveries {sum(int(r.get('recoveries') or 0) for r in mine)}, "
+              f"false track changes {sum(int(r.get('track_changed') or 0) for r in mine)}, "
               f"failures {({k: v for k, v in bad.items() if v}) or 'none'}")
 
 
@@ -154,7 +155,7 @@ def main():
     p.add_argument("--n", type=int, default=30, help="tracks per difficulty")
     p.add_argument("--first-seed", type=int, default=0)
     p.add_argument("--difficulty", default="easy,medium,hard")
-    p.add_argument("--size", default="medium", choices=["small", "medium", "large"])
+    p.add_argument("--size", default="medium", choices=["small", "medium", "large", "xl"])
     p.add_argument("--obstacles", default="all", help="comma list of known, drop, slalom; 'all'; or '' for none")
     p.add_argument("--laps", type=int, default=10)
     p.add_argument("--max-s", type=float, default=400)

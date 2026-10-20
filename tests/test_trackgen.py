@@ -18,7 +18,7 @@ def layout_from(corners, r, width=1.3, size=(10, 7), difficulty="medium"):
     """A hand-made layout, the same way the generator builds one."""
     xy = resample(np.array(rounded(corners, r, step_m=0.02, max_frac=0.5)), CFG["plan"]["ds_m"])
     t = xy[1] - xy[-1]
-    return Layout("test", size, width, xy, [f[1] for f in fillets(corners, r, 0.5)],
+    return Layout("test", size, np.full(len(xy), width), xy, [f[1] for f in fillets(corners, r, 0.5)],
                   (xy[0, 0], xy[0, 1], math.atan2(t[1], t[0])), info={"difficulty": difficulty, "lap_m": 0})
 
 

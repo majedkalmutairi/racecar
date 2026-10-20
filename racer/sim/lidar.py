@@ -51,9 +51,9 @@ class Lidar:
         if getattr(self, "_layer", None) is None or self._layer.get_size() != screen.get_size():
             self._layer = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
         self._layer.fill((0, 0, 0, 0))
-        start = track.world_to_px(x, y)
+        start = track.to_screen(x, y)
         for a, r in zip(self.angles, ranges):
             theta = yaw + a
-            end = track.world_to_px(x + r * math.cos(theta), y + r * math.sin(theta))
+            end = track.to_screen(x + r * math.cos(theta), y + r * math.sin(theta))
             pygame.draw.line(self._layer, BEAM_COLOUR, start, end)
         screen.blit(self._layer, (0, 0))

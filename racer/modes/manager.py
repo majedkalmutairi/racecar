@@ -152,14 +152,17 @@ class ModeManager:
 
     def _plan(self, scan, pose, t_now):
         self.detector = ChangeDetector(self.grid, self.angles, self.cfg, self.max_range)
-        self._build_plan(self.path, pose, t_now)
+        self._build_plan(pose, t_now, self.path)
         self._enter(Mode.RACE)
         return self.explore.step(scan)
 
-    def _build_plan(self, seed, pose, t_now):
-        """Map + an ordered loop of seed points -> centerline, racing line, speed profile, and the objects that use them."""
+    def _build_plan(self, pose, t_now, path=None):
+        """Map + explore path -> centerline, racing line, speed profile, and the objects that use them. Without a
+        path (a replan round a new box) the centerline stays and only the racing line is rebuilt: snapping the
+        centerline again where it runs through the box tangled it into loops."""
         cfg = self.cfg
-        self.center, self.width = build_centerline(self.grid, seed, cfg)
+        if path is not None:
+            self.center, self.width = build_centerline(self.grid, path, cfg)
         self.line = build_racing_line(self.center, self.width, cfg, self.grid)
         self.speed = build_speed_profile(self.line, cfg)
         self._save_plan()
@@ -209,7 +212,7 @@ class ModeManager:
         if self.new_cells >= plan["replan_cells"] and t_now - self.last_replan_t >= plan["replan_cooldown_s"]:
             print(f"[plan] {self.new_cells} new wall cells away from the known walls: replanning around them")
             self.replans += 1
-            self._build_plan(self.center, pose, t_now)
+            self._build_plan(pose, t_now)
             self.last_replan_t = t_now
 
     def _track_changed(self, pose, t_now):

@@ -5,7 +5,8 @@ from racer.learning.sections import SectionLearner
 CFG = {
     "learning": {"n_sections": 4, "start_mult": 0.6, "up": 0.05, "up_max": 0.15, "down": 0.1, "down_crash": 0.25,
                  "below_ceiling": 0.98, "probe_laps": 3, "probe": 0.04,
-                 "min_mult": 0.2, "max_mult": 2.5, "err_ok_m": 0.25},
+                 "min_mult": 0.2, "max_mult": 2.5, "err_ok_m": 0.25, "section_m": 100.0},
+    "plan": {"ds_m": 0.1},
 }
 
 

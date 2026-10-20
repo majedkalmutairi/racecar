@@ -1,0 +1,14 @@
+start_pose: {x_m: 14.96, y_m: 3.0, yaw_rad: 0.0}
+px_per_m: 50
+boxes_known: []
+boxes_drop: []
+slalom: []
+gen:
+  difficulty: medium
+  lap_m: 101.4
+  hand_made: true
+  width_range_m: [1.01, 2.26]
+  line_radius_m: 1.11
+  line_clear_m: 0.38
+  width_m: 1.6940476790707184
+  size_m: [30.0, 20.0]

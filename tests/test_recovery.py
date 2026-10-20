@@ -21,7 +21,7 @@ CFG = {
                  "rear_beam_m": 0.2, "rear_check_m": 0.1, "map_margin_m": 0.05, "no_progress_s": 30,
                  "progress_m": 1.0},
     "mapping": {"min_hits": 3, "res_m": 0.05},
-    "laps": {"radius_m": 0.5, "min_lap_s": 3, "min_lap_m": 5},
+    "laps": {"gate_half_m": 1.6, "min_lap_s": 3, "min_lap_m": 5},
 }
 ANGLES = np.linspace(-np.radians(135), np.radians(135), 108)
 NOSE_IN = np.where(np.abs(ANGLES) < 0.5, 0.35, 3.0)          # something right in front, open everywhere else
